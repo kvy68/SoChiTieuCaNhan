@@ -63,9 +63,10 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 <body>
 <div class="w">
 <header>
-  <div><h1>Tổng số dư các ví</h1><div style="display:flex;align-items:center;gap:6px"><div id="total"></div><div id="sy" class="mute"></div><button id="eye" class="eye"></button></div></div>
+  <div><h1>Tổng số dư các ví</h1><div style="display:flex;align-items:center;gap:6px"><div id="total"></div><button id="eye" class="eye"></button></div></div>
   <label style="margin:0;width:140px">Tháng<input type="month" id="mo"></label>
 </header>
+<div id="sy" class="mute" style="margin:-6px 0 14px;word-break:break-word"></div>
 <div class="tabs">
   <button class="tab" data-t="home">Tổng quan</button>
   <button class="tab" data-t="w">Ví</button>
@@ -81,7 +82,7 @@ const COL={500:'#c9506b',1000:'#8465ad',2000:'#7d8f99',5000:'#3479b8',10000:'#a9
 const PAL=['#0b6e5a','#3479b8','#a97d1f','#b94d86','#7d8f99','#8465ad','#c9506b','#2f8f4e'];
 const CC=['Ăn uống','Đi lại','Học tập','Giải trí','Mua sắm','Sức khỏe','Sinh hoạt','Khác'],CT=['Lương','Kinh doanh','Được cho / biếu','Khác'];
 const $=s=>document.querySelector(s),vn=n=>n.toLocaleString('vi-VN'),vnfmt=n=>vn(n)+' ₫',sh=d=>d>=1000?d/1000+'k':d;
-let hide=false;try{hide=localStorage.getItem('sct_hide')==='1'}catch(e){}
+let hide=true;try{const v=localStorage.getItem('sct_hide');if(v!==null)hide=v==='1'}catch(e){}
 const fmt=n=>hide?'•••••• ₫':vnfmt(n);
 function toggleHide(){hide=!hide;try{localStorage.setItem('sct_hide',hide?'1':'0')}catch(e){}render()}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
