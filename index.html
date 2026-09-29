@@ -57,12 +57,13 @@ details summary{cursor:pointer;list-style:none;margin-bottom:6px}
 .big{font-size:28px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 .ac{display:flex;gap:12px;justify-content:flex-end}.ac .del{margin:0}
+.eye{background:none;border:0;font-size:17px;line-height:1;padding:2px 4px;cursor:pointer;flex:none}
 </style>
 </head>
 <body>
 <div class="w">
 <header>
-  <div><h1>Tổng số dư các ví</h1><div id="total"></div><div id="sy" class="mute"></div></div>
+  <div><h1>Tổng số dư các ví</h1><div style="display:flex;align-items:center;gap:6px"><div id="total"></div><div id="sy" class="mute"></div><button id="eye" class="eye"></button></div></div>
   <label style="margin:0;width:140px">Tháng<input type="month" id="mo"></label>
 </header>
 <div class="tabs">
@@ -79,7 +80,10 @@ const D=[500,1000,2000,5000,10000,20000,50000,100000,200000,500000],R=D.slice().
 const COL={500:'#c9506b',1000:'#8465ad',2000:'#7d8f99',5000:'#3479b8',10000:'#a97d1f',20000:'#2f63c7',50000:'#b94d86',100000:'#2f8f4e',200000:'#a8402a',500000:'#158fa3'};
 const PAL=['#0b6e5a','#3479b8','#a97d1f','#b94d86','#7d8f99','#8465ad','#c9506b','#2f8f4e'];
 const CC=['Ăn uống','Đi lại','Học tập','Giải trí','Mua sắm','Sức khỏe','Sinh hoạt','Khác'],CT=['Lương','Kinh doanh','Được cho / biếu','Khác'];
-const $=s=>document.querySelector(s),vn=n=>n.toLocaleString('vi-VN'),fmt=n=>vn(n)+' ₫',sh=d=>d>=1000?d/1000+'k':d;
+const $=s=>document.querySelector(s),vn=n=>n.toLocaleString('vi-VN'),vnfmt=n=>vn(n)+' ₫',sh=d=>d>=1000?d/1000+'k':d;
+let hide=false;try{hide=localStorage.getItem('sct_hide')==='1'}catch(e){}
+const fmt=n=>hide?'•••••• ₫':vnfmt(n);
+function toggleHide(){hide=!hide;try{localStorage.setItem('sct_hide',hide?'1':'0')}catch(e){}render()}
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const sum=o=>D.reduce((a,d)=>a+d*(o[d]||0),0);
 const CI={'Ăn uống':'🍜','Đi lại':'🚌','Học tập':'📚','Giải trí':'🎮','Mua sắm':'🛒','Sức khỏe':'💊','Sinh hoạt':'🏠','Khác':'📦','Lương':'💼','Kinh doanh':'🏪','Được cho / biếu':'🎁'};
@@ -114,12 +118,15 @@ try{Object.assign(S,JSON.parse(localStorage.getItem('sct')))}catch(e){}
 if(S.wallet){S.wallets=[{id:1,name:'Ví tiền mặt',notes:S.wallet,target:0,deadline:''}];S.tx.forEach(t=>t.wid=1);delete S.wallet}
 norm();
 const save=()=>{try{localStorage.setItem('sct',JSON.stringify(S))}catch(e){}window.onSaved&&window.onSaved()};
+const nowT=()=>{const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const timeFromId=id=>{if(!id||id<1e12)return '';const d=new Date(id);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const txTime=t=>t.time||timeFromId(t.id);
 let tt;const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2800)};
 const W=id=>S.wallets.find(w=>w.id==id),wt=w=>w.kind==='bank'?(w.bal||0):sum(w.notes),all=()=>S.wallets.reduce((a,w)=>a+wt(w),0);
 const monthTx=()=>S.tx.filter(t=>t.date.startsWith(month));
 const spent=()=>-S.tx.filter(t=>t.date.startsWith(today().slice(0,7))&&t.net<0).reduce((a,t)=>a+t.net,0);
 const days=w=>Math.ceil((new Date(w.deadline)-new Date(today()))/864e5);
-const hdr=()=>$('#total').textContent=fmt(all());
+function hdr(){$('#total').textContent=fmt(all());const e=$('#eye');if(e){e.textContent=hide?'🙈':'👁️';e.setAttribute('aria-label',hide?'Hiện số tiền':'Ẩn số tiền')}}
 
 function render(){
   if(tab!=='add'&&cur.edit)cur={type:cur.type,wid:cur.wid,to:0,out:{},in:{},mv:{}};
@@ -217,9 +224,9 @@ function addV(){
   }else body=`<div class="card"><label>Ví<select id="wl">${opt(cur.wid)}</select></label></div>`+(!isC(cur.wid)?AMT(chi?'Số tiền chi (₫)':'Số tiền thu (₫)'):chi?G('out','Tờ tiền đưa ra','Chọn các tờ bạn đã trả.')+G('in','Tiền thối nhận lại','Nếu người bán thối lại, chọn các tờ nhận được.'):G('in','Tờ tiền nhận vào','Chọn các tờ bạn đã nhận.')+G('out','Tiền thối trả lại','Nếu bạn thối lại cho người khác, chọn các tờ đã đưa.'));
   $('#v-add').innerHTML=`${cur.edit?'<h3 style="margin:4px 2px 10px">Sửa giao dịch</h3>':''}<div class="seg" ${cur.edit?'style="display:none"':''}>${[['chi','Chi tiêu'],['thu','Thu nhập'],['ck','Chuyển ví']].map(([k,n])=>`<button data-ty="${k}" class="${ty===k?'on':''}">${n}</button>`).join('')}</div>${body}
   <div class="card"><div class="net" id="net"></div>${ck?'':`<label>Nhóm<select id="cat">${(chi?CC:CT).map(c=>`<option value="${c}">${CI[c]||''} ${c}</option>`).join('')}</select></label>`}
-  <label>Ngày<input type="date" id="dt" value="${today()}"></label><label>Ghi chú<input id="nt" maxlength="80" placeholder="Ví dụ: cơm trưa, góp quỹ laptop"></label><button class="pri" id="ok">${cur.edit?'Lưu thay đổi':'Lưu giao dịch'}</button>${cur.edit?'<button class="del" data-ce="1" style="margin:8px auto 0">Hủy sửa</button>':''}</div>`;
+  <label>Ngày<input type="date" id="dt" value="${today()}"></label><label>Giờ<input type="time" id="tm" value="${nowT()}"></label><label>Ghi chú<input id="nt" maxlength="80" placeholder="Ví dụ: cơm trưa, góp quỹ laptop"></label><button class="pri" id="ok">${cur.edit?'Lưu thay đổi':'Lưu giao dịch'}</button>${cur.edit?'<button class="del" data-ce="1" style="margin:8px auto 0">Hủy sửa</button>':''}</div>`;
   const o=cur.edit&&S.tx.find(x=>x.id==cur.edit);
-  if(o){$('#dt').value=o.date;$('#nt').value=o.note||'';if($('#cat')&&o.cat)$('#cat').value=o.cat}
+  if(o){$('#dt').value=o.date;$('#tm').value=txTime(o)||nowT();$('#nt').value=o.note||'';if($('#cat')&&o.cat)$('#cat').value=o.cat}
   upd();
 }
 function upd(){
@@ -237,7 +244,7 @@ function step(k,d,s,wid){
   cur[k][d]=v;upd();
 }
 function submit(){
-  const w=W(cur.wid),date=$('#dt').value||today(),note=$('#nt').value.trim(),bk=!isC(cur.wid),amt=Math.round(+cur.amt||0);let t,msg=cur.edit?'Đã cập nhật giao dịch':'Đã lưu giao dịch';
+  const w=W(cur.wid),date=$('#dt').value||today(),time=$('#tm').value||nowT(),note=$('#nt').value.trim(),bk=!isC(cur.wid),amt=Math.round(+cur.amt||0);let t,msg=cur.edit?'Đã cập nhật giao dịch':'Đã lưu giao dịch';
   if(cur.type==='ck'){
     const o=W(cur.to);
     if(!o||o.id==w.id){toast('Chọn ví đích khác ví nguồn');return}
@@ -249,7 +256,7 @@ function submit(){
     if(cur.type==='chi'?net>=0:net<=0){toast('Số tiền chưa hợp lệ, kiểm tra lại số tiền hoặc các tờ đã chọn');return}
     t={type:cur.type,wid:w.id,cat:$('#cat').value,out:bk?{}:{...cur.out},in:bk?{}:{...cur.in},net};
   }
-  Object.assign(t,{id:cur.edit||Date.now(),date,note});
+  Object.assign(t,{id:cur.edit||Date.now(),date,time,note});
   const old=cur.edit&&S.tx.find(x=>x.id==cur.edit),ws=mkws();
   if(old)applyTx(ws,old,-1);applyTx(ws,t,1);
   if(bad(ws)){toast('Không lưu được: số dư hoặc số tờ trong ví sẽ bị âm');return}
@@ -283,11 +290,11 @@ function hist(){
 }
 function hl(){
   const q=fold(F.q),mn=+F.min||0,mx=F.max!==''?+F.max:Infinity,on=fOn(),amt=t=>t.type==='ck'?t.amt:Math.abs(t.net);
-  const m=S.tx.filter(t=>(on||t.date.startsWith(month))&&(!q||fold((t.note||'')+' '+(t.cat||'')).includes(q))&&(!F.ty||t.type===F.ty)&&(!F.w||t.wid==F.w||t.to==F.w)&&(!F.c||t.cat===F.c)&&amt(t)>=mn&&amt(t)<=mx&&(!F.from||t.date>=F.from)&&(!F.to||t.date<=F.to)).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
+  const m=S.tx.filter(t=>(on||t.date.startsWith(month))&&(!q||fold((t.note||'')+' '+(t.cat||'')).includes(q))&&(!F.ty||t.type===F.ty)&&(!F.w||t.wid==F.w||t.to==F.w)&&(!F.c||t.cat===F.c)&&amt(t)>=mn&&amt(t)<=mx&&(!F.from||t.date>=F.from)&&(!F.to||t.date<=F.to)).sort((a,b)=>(b.date+(txTime(b)||'00:00')).localeCompare(a.date+(txTime(a)||'00:00'))||b.id-a.id);
   const inc=m.filter(t=>t.net>0).reduce((a,t)=>a+t.net,0),exp=-m.filter(t=>t.net<0).reduce((a,t)=>a+t.net,0);
   const chips=t=>t.type==='ck'?D.filter(d=>t.mv[d]).reverse().map(d=>`<span>${t.mv[d]}×${sh(d)}</span>`).join(''):D.filter(d=>t.out[d]).reverse().map(d=>`<span>−${t.out[d]}×${sh(d)}</span>`).join('')+D.filter(d=>t.in[d]).reverse().map(d=>`<span>+${t.in[d]}×${sh(d)}</span>`).join('');
   const nm=id=>W(id)?esc(W(id).name):'ví đã xóa';
-  $('#hl').innerHTML=`<h3>${on?'Kết quả tìm kiếm (mọi tháng)':'Giao dịch tháng '+month.slice(5)+'/'+month.slice(0,4)}</h3><p class="mute" style="margin-bottom:4px">${m.length} giao dịch${on?', thu '+fmt(inc)+', chi '+fmt(exp):''}</p>`+(m.length?m.map(t=>`<div class="tx"><div><b>${t.type==='ck'?'🔁 Chuyển ví':ci(t.cat)}</b> <span class="mute">${t.date.split('-').reverse().join('/')}</span><div class="mute">${t.type==='ck'?nm(t.wid)+' → '+nm(t.to):nm(t.wid)}${t.note?': '+esc(t.note):''}</div><div class="chips">${chips(t)}</div></div><div class="amt ${t.type==='ck'?'':t.net<0?'neg':'pos'}">${t.type==='ck'?'⇄ '+fmt(t.amt):(t.net<0?'−':'+')+fmt(Math.abs(t.net))}<span class="ac"><button class="del" data-ed="${t.id}">Sửa</button><button class="del" data-del="${t.id}">Xóa</button></span></div></div>`).join(''):'<p class="mute">Không có giao dịch nào phù hợp.</p>');
+  $('#hl').innerHTML=`<h3>${on?'Kết quả tìm kiếm (mọi tháng)':'Giao dịch tháng '+month.slice(5)+'/'+month.slice(0,4)}</h3><p class="mute" style="margin-bottom:4px">${m.length} giao dịch${on?', thu '+fmt(inc)+', chi '+fmt(exp):''}</p>`+(m.length?m.map(t=>`<div class="tx"><div><b>${t.type==='ck'?'🔁 Chuyển ví':ci(t.cat)}</b> <span class="mute">${t.date.split('-').reverse().join('/')} · ${txTime(t)}</span><div class="mute">${t.type==='ck'?nm(t.wid)+' → '+nm(t.to):nm(t.wid)}${t.note?': '+esc(t.note):''}</div><div class="chips">${chips(t)}</div></div><div class="amt ${t.type==='ck'?'':t.net<0?'neg':'pos'}">${t.type==='ck'?'⇄ '+fmt(t.amt):(t.net<0?'−':'+')+fmt(Math.abs(t.net))}<span class="ac"><button class="del" data-ed="${t.id}">Sửa</button><button class="del" data-del="${t.id}">Xóa</button></span></div></div>`).join(''):'<p class="mute">Không có giao dịch nào phù hợp.</p>');
 }
 function del(id){
   const t=S.tx.find(x=>x.id==id);if(!t)return;
@@ -328,6 +335,7 @@ document.addEventListener('click',e=>{
   else if(q.sv)saveW(q.sv);
   else if(q.rm)rmW(q.rm);
   else if(q.lm){S.limit=Math.max(0,+$('#lm').value||0);save();toast('Đã lưu hạn mức chi tháng')}
+  else if(b.id==='eye')toggleHide();
   else if(b.id==='ok')submit();
 });
 document.addEventListener('change',e=>{
