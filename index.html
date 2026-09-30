@@ -331,8 +331,15 @@ function del(id){
 document.addEventListener('keydown',e=>{if(e.target.id==='ai-q'&&e.key==='Enter'){e.preventDefault();aiSend()}});
 document.addEventListener('input',e=>{if(e.target.id==='amt'){cur.amt=+e.target.value||0;upd();return}
   const k=e.target.dataset&&e.target.dataset.f;if(k){F[k]=e.target.value;hl()}});
-let AI={key:'',model:'gemini-3-flash-preview',msgs:[],insight:'',busyC:false,busyI:false};
-try{const c=JSON.parse(localStorage.getItem('sct_ai'))||{};AI.key=c.key||'';AI.model=c.model||AI.model}catch(e){}
+let AI={provider:'gemini',gKey:'',gModel:'gemini-3-flash-preview',kKey:'',kModel:'kira-mini-1.0',msgs:[],insight:'',busyC:false,busyI:false};
+try{
+  const c=JSON.parse(localStorage.getItem('sct_ai'))||{};
+  AI.provider=c.provider||(c.key?'gemini':AI.provider);
+  AI.gKey=c.gKey!==undefined?c.gKey:(c.key||'');
+  AI.gModel=c.gModel||c.model||AI.gModel;
+  AI.kKey=c.kKey||'';
+  AI.kModel=c.kModel||AI.kModel;
+}catch(e){}
 function mdish(s){let t=esc(s);t=t.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');t=t.replace(/^[-*] (.*)$/gm,'• $1');return t.replace(/\n/g,'<br>')}
 function financeContext(){
   const m=monthTx(),inc=m.filter(t=>t.net>0).reduce((a,t)=>a+t.net,0),exp=-m.filter(t=>t.net<0).reduce((a,t)=>a+t.net,0),cats={};
@@ -344,47 +351,71 @@ function financeContext(){
   const tx=m.slice().sort((a,b)=>(b.date+(txTime(b)||'')).localeCompare(a.date+(txTime(a)||''))).slice(0,60).map(t=>t.type==='ck'?`${t.date} ${txTime(t)} chuyển ${vnfmt(t.amt)} từ "${W(t.wid)?W(t.wid).name:'?'}" sang "${W(t.to)?W(t.to).name:'?'}"`:`${t.date} ${txTime(t)} ${t.net<0?'chi':'thu'} ${vnfmt(Math.abs(t.net))} - ${t.cat}${t.note?': '+t.note:''} (ví ${W(t.wid)?W(t.wid).name:'?'})`).join('\n')||'(chưa có giao dịch)';
   return `Tổng số dư hiện tại: ${vnfmt(all())}\nCác ví:\n${wl}\nTháng ${month}: thu ${vnfmt(inc)}, chi ${vnfmt(exp)}\nChi tiêu theo danh mục tháng ${month}:\n${cl}\nNgân sách theo danh mục tháng ${month}:\n${bg}\nThu chi 6 tháng gần nhất:\n${hist}\nGiao dịch trong tháng ${month} (mới nhất trước, tối đa 60 dòng):\n${tx}`;
 }
-async function askGemini(sys,turns){
-  if(!AI.key){toast('Nhập khóa API Gemini trước đã');return null}
-  try{
-    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(AI.model||'gemini-3-flash-preview')}:generateContent`,{
-      method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':AI.key},
-      body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:turns,generationConfig:{temperature:0.4}})
-    });
-    const d=await r.json();
-    if(!r.ok)throw new Error((d.error&&d.error.message)||('Lỗi HTTP '+r.status));
-    const text=((d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[]).map(p=>p.text||'').join('').trim();
-    if(!text)throw new Error('Không nhận được nội dung trả lời');
-    return text;
-  }catch(e){toast('Lỗi gọi Gemini: '+(e.message||e));return null}
+async function callGemini(sys,msgs){
+  if(!AI.gKey)throw new Error('Chưa nhập khóa API Gemini');
+  const turns=msgs.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]}));
+  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(AI.gModel||'gemini-3-flash-preview')}:generateContent`,{
+    method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':AI.gKey},
+    body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:turns,generationConfig:{temperature:0.4}})
+  });
+  const d=await r.json();
+  if(!r.ok)throw new Error((d.error&&d.error.message)||('Lỗi HTTP '+r.status));
+  const text=((d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[]).map(p=>p.text||'').join('').trim();
+  if(!text)throw new Error('Không nhận được nội dung trả lời');
+  return text;
 }
+async function callKira(sys,msgs){
+  if(!AI.kKey)throw new Error('Chưa nhập khóa API Kira AI');
+  const messages=[{role:'system',content:sys},...msgs.map(m=>({role:m.role==='user'?'user':'assistant',content:m.text}))];
+  const r=await fetch('https://kiraai.vn/api/v1/chat/completions',{
+    method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AI.kKey},
+    body:JSON.stringify({model:AI.kModel||'kira-mini-1.0',messages,temperature:0.4})
+  });
+  const d=await r.json();
+  if(!r.ok)throw new Error((d.error&&(d.error.message||d.error))||('Lỗi HTTP '+r.status));
+  const text=d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content;
+  if(!text)throw new Error('Không nhận được nội dung trả lời');
+  return String(text).trim();
+}
+async function askAI(sys,msgs){
+  try{return AI.provider==='kira'?await callKira(sys,msgs):await callGemini(sys,msgs)}
+  catch(e){toast('Lỗi gọi AI: '+(e.message||e));return null}
+}
+function aiPersist(){try{localStorage.setItem('sct_ai',JSON.stringify({provider:AI.provider,gKey:AI.gKey,gModel:AI.gModel,kKey:AI.kKey,kModel:AI.kModel}))}catch(e){}}
+function aiSetProvider(p){AI.provider=p;aiPersist();aiTab()}
 function aiSave(){
-  AI.key=$('#ai-k').value.trim();AI.model=$('#ai-m').value.trim()||'gemini-3-flash-preview';
-  try{localStorage.setItem('sct_ai',JSON.stringify({key:AI.key,model:AI.model}))}catch(e){}
-  toast('Đã lưu cấu hình Gemini');
+  AI.gKey=$('#ai-gk').value.trim();AI.gModel=$('#ai-gm').value.trim()||'gemini-3-flash-preview';
+  AI.kKey=$('#ai-kk').value.trim();AI.kModel=$('#ai-km').value.trim()||'kira-mini-1.0';
+  aiPersist();toast('Đã lưu cấu hình AI');
 }
+function aiHasKey(){return AI.provider==='kira'?!!AI.kKey:!!AI.gKey}
 async function aiSend(){
   const el=$('#ai-q'),q=el&&el.value.trim();if(!q)return;
-  if(!AI.key){toast('Nhập khóa API Gemini trước đã');return}
+  if(!aiHasKey()){toast('Nhập khóa API cho '+(AI.provider==='kira'?'Kira AI':'Gemini')+' trước đã');return}
   AI.msgs.push({role:'user',text:q});AI.busyC=true;aiTab();
   const sys='Bạn là trợ lý tài chính cá nhân, trả lời bằng tiếng Việt, ngắn gọn, cụ thể, dùng đơn vị ₫. Chỉ dựa vào dữ liệu chi tiêu dưới đây, không bịa số liệu ngoài dữ liệu được cho. Nếu không đủ dữ liệu để trả lời, hãy nói rõ.\n\n'+financeContext();
-  const turns=AI.msgs.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]}));
-  const ans=await askGemini(sys,turns);
+  const ans=await askAI(sys,AI.msgs);
   AI.busyC=false;if(ans)AI.msgs.push({role:'model',text:ans});aiTab();
 }
 async function aiInsight(){
-  if(!AI.key){toast('Nhập khóa API Gemini trước đã');return}
+  if(!aiHasKey()){toast('Nhập khóa API cho '+(AI.provider==='kira'?'Kira AI':'Gemini')+' trước đã');return}
   AI.busyI=true;aiTab();
   const sys='Bạn là cố vấn tài chính cá nhân, trả lời bằng tiếng Việt, ngắn gọn, không chào hỏi hay kết luận dài dòng.';
   const prompt='Dựa trên dữ liệu chi tiêu tháng này dưới đây, hãy viết: 1) một đoạn 2-3 câu nhận xét tình hình thu chi tháng này, 2) đúng 3 gợi ý tiết kiệm cụ thể (mỗi gợi ý một dòng bắt đầu bằng dấu -), nhắm vào các danh mục chi nhiều nhất hoặc ngân sách sắp vượt.\n\n'+financeContext();
-  const ans=await askGemini(sys,[{role:'user',parts:[{text:prompt}]}]);
+  const ans=await askAI(sys,[{role:'user',text:prompt}]);
   AI.busyI=false;if(ans)AI.insight=ans;aiTab();
 }
 function aiTab(){
-  $('#v-ai').innerHTML=`<div class="card"><h3>Cấu hình Gemini</h3><p class="mute" style="margin-bottom:8px">Khóa API chỉ lưu trên máy này, không đồng bộ lên đám mây. Câu hỏi và một bản tóm tắt thu chi của bạn sẽ được gửi tới Google Gemini để trả lời. Chỉ hoạt động trên trang bạn tự host (không chạy được ở bản xem trước trên claude.ai).</p>
-  <label>Khóa API Gemini<input id="ai-k" type="password" value="${esc(AI.key)}" placeholder="AIza..."></label>
-  <label>Model<input id="ai-m" value="${esc(AI.model)}"></label>
-  <button class="pri" data-ai="save">Lưu cấu hình</button></div>
+  $('#v-ai').innerHTML=`<div class="card"><h3>Nhà cung cấp AI</h3><p class="mute" style="margin-bottom:8px">Chọn AI dùng cho chat và phân tích bên dưới, đổi qua lại không mất cấu hình đã lưu của bên kia.</p>
+  <div class="seg"><button data-prov="gemini" class="${AI.provider==='gemini'?'on':''}">Google Gemini</button><button data-prov="kira" class="${AI.provider==='kira'?'on':''}">Kira AI</button></div></div>
+  <div class="card"><h3>Cấu hình Google Gemini</h3>
+  <label>Khóa API Gemini<input id="ai-gk" type="password" value="${esc(AI.gKey)}" placeholder="AIza..."></label>
+  <label>Model<input id="ai-gm" value="${esc(AI.gModel)}"></label></div>
+  <div class="card"><h3>Cấu hình Kira AI</h3><p class="mute" style="margin-bottom:8px">Tương thích chuẩn OpenAI. Model miễn phí: kira-mini-1.0.</p>
+  <label>Khóa API Kira AI<input id="ai-kk" type="password" value="${esc(AI.kKey)}" placeholder="kira_..."></label>
+  <label>Model<input id="ai-km" value="${esc(AI.kModel)}"></label></div>
+  <div class="card"><button class="pri" data-ai="save">Lưu cấu hình</button>
+  <p class="mute" style="margin-top:8px">Khóa API chỉ lưu trên máy này, không đồng bộ lên đám mây. Câu hỏi và một bản tóm tắt thu chi của bạn sẽ được gửi tới AI đang chọn để trả lời. Chỉ hoạt động trên trang bạn tự host (không chạy được ở bản xem trước trên claude.ai).</p></div>
   <div class="card"><h3>Nhận xét & gợi ý tiết kiệm tháng ${+month.slice(5)}/${month.slice(0,4)}</h3>
   <button class="pri" data-ai="insight" ${AI.busyI?'disabled':''}>${AI.busyI?'Đang phân tích…':'Phân tích tháng này'}</button>
   ${AI.insight?`<div style="margin-top:10px">${mdish(AI.insight)}</div>`:''}</div>
@@ -425,6 +456,7 @@ document.addEventListener('click',e=>{
   else if(q.rm)rmW(q.rm);
   else if(q.lm){S.limit=Math.max(0,+$('#lm').value||0);save();toast('Đã lưu hạn mức chi tháng')}
   else if(b.id==='eye')toggleHide();
+  else if(q.prov)aiSetProvider(q.prov);
   else if(q.ai==='save')aiSave();
   else if(q.ai==='insight')aiInsight();
   else if(b.id==='ai-send')aiSend();
