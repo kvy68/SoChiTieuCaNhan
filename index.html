@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Sổ chi tiêu thông minh (đồng bộ Supabase)</title>
+<title>Sổ chi tiêu theo tờ tiền (đồng bộ Supabase)</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&display=swap">
 <style>
 :root{--bg:#eaf0ee;--card:#fff;--ink:#10231d;--mute:#5f7069;--line:#dbe4e0;--acc:#0b6e5a;--acc2:#e1efeb;--on:#fff;--neg:#b93815;--pos:#0b6e5a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -58,6 +58,11 @@ details summary{cursor:pointer;list-style:none;margin-bottom:6px}
 hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 .ac{display:flex;gap:12px;justify-content:flex-end}.ac .del{margin:0}
 .eye{background:none;border:0;font-size:17px;line-height:1;padding:2px 4px;cursor:pointer;flex:none}
+.chat{max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 2px;margin-bottom:2px}
+.cb{padding:8px 12px;border-radius:12px;font-size:14px;line-height:1.45;max-width:88%}
+.cb.user{align-self:flex-end;background:var(--acc);color:var(--on)}
+.cb.model{align-self:flex-start;background:var(--acc2)}
+#ai-q{flex:1;margin-top:0}
 </style>
 </head>
 <body>
@@ -72,8 +77,9 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
   <button class="tab" data-t="w">Ví</button>
   <button class="tab" data-t="add">Thêm</button>
   <button class="tab" data-t="hist">Lịch sử</button>
+  <button class="tab" data-t="ai">AI</button>
 </div>
-<main><section id="v-home"></section><section id="v-w" hidden></section><section id="v-add" hidden></section><section id="v-hist" hidden></section></main>
+<main><section id="v-home"></section><section id="v-w" hidden></section><section id="v-add" hidden></section><section id="v-hist" hidden></section><section id="v-ai" hidden></section></main>
 </div>
 <div id="toast" role="status"></div>
 <script>
@@ -133,8 +139,8 @@ function render(){
   if(tab!=='add'&&cur.edit)cur={type:cur.type,wid:cur.wid,to:0,out:{},in:{},mv:{}};
   hdr();$('#mo').value=month;
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
-  ['home','w','add','hist'].forEach(t=>$('#v-'+t).hidden=t!==tab);
-  ({home,w:wal,add:addV,hist})[tab]();
+  ['home','w','add','hist','ai'].forEach(t=>$('#v-'+t).hidden=t!==tab);
+  ({home,w:wal,add:addV,hist,ai:aiTab})[tab]();
 }
 const stp=(k,d,n,wid)=>`<div class="step"><button data-k="${k}" data-d="${d}" data-s="-1" data-w="${wid||''}" aria-label="Bớt tờ ${vn(d)}">−</button><b>${n}</b><button data-k="${k}" data-d="${d}" data-s="1" data-w="${wid||''}" aria-label="Thêm tờ ${vn(d)}">+</button></div>`;
 const chip=d=>`<div class="chip" style="background:${COL[d]}">${vn(d)}</div>`;
@@ -303,8 +309,71 @@ function del(id){
   if(bad(ws)){toast('Không thể xóa: các ví không còn đủ tờ hoặc số dư để hoàn tác giao dịch này');return}
   commit(ws);S.tx=S.tx.filter(x=>x.id!=id);save();render();toast('Đã xóa giao dịch và hoàn lại số tờ vào ví');
 }
+document.addEventListener('keydown',e=>{if(e.target.id==='ai-q'&&e.key==='Enter'){e.preventDefault();aiSend()}});
 document.addEventListener('input',e=>{if(e.target.id==='amt'){cur.amt=+e.target.value||0;upd();return}
   const k=e.target.dataset&&e.target.dataset.f;if(k){F[k]=e.target.value;hl()}});
+let AI={key:'',model:'gemini-3-flash-preview',msgs:[],insight:'',busyC:false,busyI:false};
+try{const c=JSON.parse(localStorage.getItem('sct_ai'))||{};AI.key=c.key||'';AI.model=c.model||AI.model}catch(e){}
+function mdish(s){let t=esc(s);t=t.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');t=t.replace(/^[-*] (.*)$/gm,'• $1');return t.replace(/\n/g,'<br>')}
+function financeContext(){
+  const m=monthTx(),inc=m.filter(t=>t.net>0).reduce((a,t)=>a+t.net,0),exp=-m.filter(t=>t.net<0).reduce((a,t)=>a+t.net,0),cats={};
+  m.filter(t=>t.net<0).forEach(t=>cats[t.cat]=(cats[t.cat]||0)-t.net);
+  const wl=S.wallets.map(w=>`- ${w.name} (${w.kind==='bank'?'ngân hàng':'tiền mặt'}): số dư ${vnfmt(wt(w))}`+(w.target?`, mục tiêu ${vnfmt(w.target)}`+(w.deadline?` (hạn ${w.deadline})`:''):'')).join('\n');
+  const cl=Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`- ${c}: ${vnfmt(v)}`).join('\n')||'(chưa có khoản chi nào)';
+  const bg=Object.entries(S.budgets||{}).filter(([,b])=>b>0).map(([c,b])=>`- ${c}: đã dùng ${vnfmt(cats[c]||0)} / ngân sách ${vnfmt(b)}`).join('\n')||'(chưa đặt ngân sách)';
+  const hist=[...Array(6)].map((_,i)=>{const d=new Date(month+'-01T00:00:00Z');d.setUTCMonth(d.getUTCMonth()-5+i);const mm=d.toISOString().slice(0,7);const x=S.tx.filter(t=>t.date.startsWith(mm)),ii=x.filter(t=>t.net>0).reduce((a,t)=>a+t.net,0),ee=-x.filter(t=>t.net<0).reduce((a,t)=>a+t.net,0);return `- ${mm}: thu ${vnfmt(ii)}, chi ${vnfmt(ee)}`}).join('\n');
+  const tx=m.slice().sort((a,b)=>(b.date+(txTime(b)||'')).localeCompare(a.date+(txTime(a)||''))).slice(0,60).map(t=>t.type==='ck'?`${t.date} ${txTime(t)} chuyển ${vnfmt(t.amt)} từ "${W(t.wid)?W(t.wid).name:'?'}" sang "${W(t.to)?W(t.to).name:'?'}"`:`${t.date} ${txTime(t)} ${t.net<0?'chi':'thu'} ${vnfmt(Math.abs(t.net))} - ${t.cat}${t.note?': '+t.note:''} (ví ${W(t.wid)?W(t.wid).name:'?'})`).join('\n')||'(chưa có giao dịch)';
+  return `Tổng số dư hiện tại: ${vnfmt(all())}\nCác ví:\n${wl}\nTháng ${month}: thu ${vnfmt(inc)}, chi ${vnfmt(exp)}\nChi tiêu theo danh mục tháng ${month}:\n${cl}\nNgân sách theo danh mục tháng ${month}:\n${bg}\nThu chi 6 tháng gần nhất:\n${hist}\nGiao dịch trong tháng ${month} (mới nhất trước, tối đa 60 dòng):\n${tx}`;
+}
+async function askGemini(sys,turns){
+  if(!AI.key){toast('Nhập khóa API Gemini trước đã');return null}
+  try{
+    const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(AI.model||'gemini-3-flash-preview')}:generateContent`,{
+      method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':AI.key},
+      body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:turns,generationConfig:{temperature:0.4}})
+    });
+    const d=await r.json();
+    if(!r.ok)throw new Error((d.error&&d.error.message)||('Lỗi HTTP '+r.status));
+    const text=((d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[]).map(p=>p.text||'').join('').trim();
+    if(!text)throw new Error('Không nhận được nội dung trả lời');
+    return text;
+  }catch(e){toast('Lỗi gọi Gemini: '+(e.message||e));return null}
+}
+function aiSave(){
+  AI.key=$('#ai-k').value.trim();AI.model=$('#ai-m').value.trim()||'gemini-3-flash-preview';
+  try{localStorage.setItem('sct_ai',JSON.stringify({key:AI.key,model:AI.model}))}catch(e){}
+  toast('Đã lưu cấu hình Gemini');
+}
+async function aiSend(){
+  const el=$('#ai-q'),q=el&&el.value.trim();if(!q)return;
+  if(!AI.key){toast('Nhập khóa API Gemini trước đã');return}
+  AI.msgs.push({role:'user',text:q});AI.busyC=true;aiTab();
+  const sys='Bạn là trợ lý tài chính cá nhân, trả lời bằng tiếng Việt, ngắn gọn, cụ thể, dùng đơn vị ₫. Chỉ dựa vào dữ liệu chi tiêu dưới đây, không bịa số liệu ngoài dữ liệu được cho. Nếu không đủ dữ liệu để trả lời, hãy nói rõ.\n\n'+financeContext();
+  const turns=AI.msgs.map(m=>({role:m.role==='user'?'user':'model',parts:[{text:m.text}]}));
+  const ans=await askGemini(sys,turns);
+  AI.busyC=false;if(ans)AI.msgs.push({role:'model',text:ans});aiTab();
+}
+async function aiInsight(){
+  if(!AI.key){toast('Nhập khóa API Gemini trước đã');return}
+  AI.busyI=true;aiTab();
+  const sys='Bạn là cố vấn tài chính cá nhân, trả lời bằng tiếng Việt, ngắn gọn, không chào hỏi hay kết luận dài dòng.';
+  const prompt='Dựa trên dữ liệu chi tiêu tháng này dưới đây, hãy viết: 1) một đoạn 2-3 câu nhận xét tình hình thu chi tháng này, 2) đúng 3 gợi ý tiết kiệm cụ thể (mỗi gợi ý một dòng bắt đầu bằng dấu -), nhắm vào các danh mục chi nhiều nhất hoặc ngân sách sắp vượt.\n\n'+financeContext();
+  const ans=await askGemini(sys,[{role:'user',parts:[{text:prompt}]}]);
+  AI.busyI=false;if(ans)AI.insight=ans;aiTab();
+}
+function aiTab(){
+  $('#v-ai').innerHTML=`<div class="card"><h3>Cấu hình Gemini</h3><p class="mute" style="margin-bottom:8px">Khóa API chỉ lưu trên máy này, không đồng bộ lên đám mây. Câu hỏi và một bản tóm tắt thu chi của bạn sẽ được gửi tới Google Gemini để trả lời. Chỉ hoạt động trên trang bạn tự host (không chạy được ở bản xem trước trên claude.ai).</p>
+  <label>Khóa API Gemini<input id="ai-k" type="password" value="${esc(AI.key)}" placeholder="AIza..."></label>
+  <label>Model<input id="ai-m" value="${esc(AI.model)}"></label>
+  <button class="pri" data-ai="save">Lưu cấu hình</button></div>
+  <div class="card"><h3>Nhận xét & gợi ý tiết kiệm tháng ${+month.slice(5)}/${month.slice(0,4)}</h3>
+  <button class="pri" data-ai="insight" ${AI.busyI?'disabled':''}>${AI.busyI?'Đang phân tích…':'Phân tích tháng này'}</button>
+  ${AI.insight?`<div style="margin-top:10px">${mdish(AI.insight)}</div>`:''}</div>
+  <div class="card"><h3>Chat hỏi đáp về chi tiêu</h3>
+  <div id="ai-chat" class="chat">${AI.msgs.length?AI.msgs.map(m=>`<div class="cb ${m.role}">${mdish(m.text)}</div>`).join(''):'<p class="mute">Ví dụ: "Tháng này mình tiêu nhiều nhất vào đâu?", "Có nên giảm chi ăn uống không?"</p>'}${AI.busyC?'<div class="cb model">Đang trả lời…</div>':''}</div>
+  <div style="display:flex;gap:8px;margin-top:8px"><input id="ai-q" placeholder="Nhập câu hỏi..." ${AI.busyC?'disabled':''}><button class="pri" style="width:auto;padding:0 16px" id="ai-send" ${AI.busyC?'disabled':''}>➤</button></div></div>`;
+  const c=$('#ai-chat');if(c)c.scrollTop=c.scrollHeight;
+}
 function addW(){
   const n=$('#nn').value.trim();if(!n){toast('Nhập tên ví trước khi tạo');return}
   const id=Date.now();S.wallets.push({id,name:n,notes:Object.fromEntries(D.map(d=>[d,0])),kind:$('#nk').value,bal:$('#nk').value==='bank'?Math.max(0,Math.round(+$('#nb').value||0)):0,target:Math.max(0,+$('#nt2').value||0),deadline:$('#nd').value});
@@ -337,6 +406,9 @@ document.addEventListener('click',e=>{
   else if(q.rm)rmW(q.rm);
   else if(q.lm){S.limit=Math.max(0,+$('#lm').value||0);save();toast('Đã lưu hạn mức chi tháng')}
   else if(b.id==='eye')toggleHide();
+  else if(q.ai==='save')aiSave();
+  else if(q.ai==='insight')aiInsight();
+  else if(b.id==='ai-send')aiSend();
   else if(b.id==='ok')submit();
 });
 document.addEventListener('change',e=>{
