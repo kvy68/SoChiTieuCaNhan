@@ -232,11 +232,36 @@ function home(){
 }
 function wal(){
   $('#v-w').innerHTML=`<div class="card"><h3>Tạo ví mới</h3><p class="mute" style="margin-bottom:8px">Số tiền mục tiêu và hạn chót đều là tùy chọn.</p><label>Loại ví<select id="nk"><option value="cash">💵 Tiền mặt (theo từng tờ)</option><option value="bank">🏦 Ngân hàng / ví điện tử (theo số dư)</option></select></label><label>Tên ví<input id="nn" maxlength="30" placeholder="Ví dụ: Vietcombank, Mua laptop"></label><label>Số dư ban đầu (₫), chỉ áp dụng cho ví ngân hàng<input id="nb" type="number" min="0" step="1000" inputmode="numeric"></label><label>Số tiền mục tiêu (₫)<input id="nt2" type="number" min="0" step="1000" inputmode="numeric"></label><label>Hạn chót<input id="nd" type="date"></label><button class="pri" data-add="1">Tạo ví</button></div>`+
-  S.wallets.map(w=>`<details class="card" data-id="${w.id}" ${open.has(w.id)?'open':''}><summary><b>${wn(w)}</b><b style="float:right">${fmt(wt(w))}</b></summary>${goal(w)}${w.kind==='bank'?`<label style="margin-top:8px">Số dư hiện tại (₫)<input id="b-${w.id}" type="number" min="0" step="1000" value="${w.bal||0}"></label><p class="mute">Chỉnh khi bạn đối chiếu với sao kê hoặc app ngân hàng.</p>`:`<p class="mute" style="margin:8px 0 4px">Kiểm kê số tờ trong ví</p>${R.map(d=>`<div class="st" style="margin:6px 0">${chip(d)}${stp('w',d,w.notes[d],w.id)}</div>`).join('')}`}
+  S.wallets.map(w=>`<details class="card" data-id="${w.id}" ${open.has(w.id)?'open':''}><summary><b>${wn(w)}</b><b style="float:right">${fmt(wt(w))}</b></summary>${goal(w)}${w.target?`<div style="margin:8px 0"><button class="pri" style="background:var(--acc2);color:var(--acc)" data-plan="${w.id}" ${AI.planBusy[w.id]?'disabled':''}>${AI.planBusy[w.id]?'Đang lập kế hoạch…':'📅 Lập kế hoạch AI'}</button>${AI.plan[w.id]?`<div style="margin-top:8px">${mdish(AI.plan[w.id])}</div>`:''}</div>`:''}${w.kind==='bank'?`<label style="margin-top:8px">Số dư hiện tại (₫)<input id="b-${w.id}" type="number" min="0" step="1000" value="${w.bal||0}"></label><p class="mute">Chỉnh khi bạn đối chiếu với sao kê hoặc app ngân hàng.</p>`:`<p class="mute" style="margin:8px 0 4px">Kiểm kê số tờ trong ví</p>${R.map(d=>`<div class="st" style="margin:6px 0">${chip(d)}${stp('w',d,w.notes[d],w.id)}</div>`).join('')}`}
   <label style="margin-top:12px">Tên ví<input id="n-${w.id}" value="${esc(w.name)}"></label><label>Số tiền mục tiêu (₫)<input id="t-${w.id}" type="number" min="0" step="1000" value="${w.target||''}"></label><label>Hạn chót<input id="d-${w.id}" type="date" value="${w.deadline||''}"></label>
   <button class="pri" data-sv="${w.id}">Lưu thay đổi</button><button class="del" data-rm="${w.id}">Xóa ví</button></details>`).join('')+
   `<div class="card"><h3>Hạn mức chi mỗi tháng</h3><label>Số tiền (₫), để trống nếu không dùng<input id="lm" type="number" min="0" step="1000" value="${S.limit||''}"></label><button class="pri" data-lm="1">Lưu hạn mức</button></div>`+
   `<div class="card"><h3>Ngân sách theo danh mục</h3><p class="mute" style="margin-bottom:8px">Để trống nếu không đặt. App nhắc khi bạn dùng đến 80% và khi vượt ngân sách.</p>${CC.map((c,i)=>`<label>${CI[c]} ${c}<input id="bg-${i}" type="number" min="0" step="1000" value="${S.budgets[c]||''}"></label>`).join('')}<button class="pri" data-bg="1">Lưu ngân sách</button></div>`;
+}
+function splitNotes(amount){const out={};let rem=Math.max(0,Math.round(amount));for(const d of R){const take=Math.floor(rem/d);if(take>0){out[d]=take;rem-=take*d}}return{notes:out,rem}}
+function greedyNotes(amount,w){const out={};let rem=Math.max(0,Math.round(amount));for(const d of R){const have=w.notes[d]||0,take=Math.min(have,Math.floor(rem/d));if(take>0){out[d]=take;rem-=take*d}}return{notes:out,rem}}
+function parseAIJson(raw){const s=(raw||'').replace(/```json|```/gi,'').trim();try{return JSON.parse(s)}catch(e){}const m=s.match(/\{[\s\S]*\}/);if(m){try{return JSON.parse(m[0])}catch(e){}}return null}
+function applyDraft(j,forceType){
+  const type=forceType||(['chi','thu','ck'].includes(j.type)?j.type:'chi');
+  const w=S.wallets.find(x=>fold(x.name)===fold(j.wallet||''))||W(cur.wid)||S.wallets[0];
+  cur={type,wid:w.id,to:0,out:{},in:{},mv:{},amt:0};
+  const amt=Math.max(0,Math.round(+j.amount||0));
+  if(type==='ck'){
+    const to=S.wallets.find(x=>x.id!==w.id&&fold(x.name)===fold(j.toWallet||''));
+    cur.to=(to||S.wallets.find(x=>x.id!==w.id)||{}).id;
+    if(!isC(w.id)&&!isC(cur.to))cur.amt=amt;
+    else if(isC(w.id)){const g=greedyNotes(amt,w);cur.mv=g.notes;if(g.rem>0)toast('Ví không đủ tờ khớp đúng số tiền, chỉnh lại nhé')}
+    else cur.mv=splitNotes(amt).notes;
+  }else{
+    if(isC(w.id)){
+      const g=type==='chi'?greedyNotes(amt,w):splitNotes(amt);
+      if(type==='chi'){cur.out=g.notes;cur.in={}}else{cur.in=g.notes;cur.out={}}
+      if(g.rem>0)toast('Ví không đủ tờ khớp đúng số tiền, chỉnh lại nhé');
+    }else cur.amt=amt;
+  }
+  const list=type==='thu'?CT:CC,cat=list.find(c=>fold(c)===fold(j.category||''))||null;
+  cur.draft={note:j.note||'',date:(j.date&&/^\d{4}-\d{2}-\d{2}$/.test(j.date))?j.date:null,cat};
+  tab='add';render();
 }
 function addV(){
   if(!W(cur.wid))cur.wid=S.wallets[0].id;
@@ -248,11 +273,15 @@ function addV(){
     if(!W(cur.to)||cur.to==cur.wid)cur.to=(S.wallets.find(w=>w.id!=cur.wid)||{}).id;
     body=S.wallets.length<2?'<div class="card"><p class="mute">Cần ít nhất 2 ví để chuyển tiền. Hãy tạo thêm ví ở tab Ví.</p></div>':`<div class="card"><label>Từ ví<select id="wl">${opt(cur.wid)}</select></label><label>Đến ví<select id="to">${opt(cur.to)}</select></label></div>`+(!isC(cur.wid)&&!isC(cur.to)?AMT('Số tiền cần chuyển (₫)'):G('mv',isC(cur.wid)?'Các tờ cần chuyển':'Các tờ tiền nhận được',isC(cur.wid)?'Chuyển đúng những tờ tiền bạn chọn, tối đa bằng số tờ đang có.':'Chọn các tờ tiền bạn nhận khi rút từ ngân hàng.'));
   }else body=`<div class="card"><label>Ví<select id="wl">${opt(cur.wid)}</select></label></div>`+(!isC(cur.wid)?AMT(chi?'Số tiền chi (₫)':'Số tiền thu (₫)'):chi?G('out','Tờ tiền đưa ra','Chọn các tờ bạn đã trả.')+G('in','Tiền thối nhận lại','Nếu người bán thối lại, chọn các tờ nhận được.'):G('in','Tờ tiền nhận vào','Chọn các tờ bạn đã nhận.')+G('out','Tiền thối trả lại','Nếu bạn thối lại cho người khác, chọn các tờ đã đưa.'));
-  $('#v-add').innerHTML=`${cur.edit?'<h3 style="margin:4px 2px 10px">Sửa giao dịch</h3>':''}<div class="seg" ${cur.edit?'style="display:none"':''}>${[['chi','Chi tiêu'],['thu','Thu nhập'],['ck','Chuyển ví']].map(([k,n])=>`<button data-ty="${k}" class="${ty===k?'on':''}">${n}</button>`).join('')}</div>${body}
+  const quick=cur.edit?'':`<div class="card"><h3>✨ Nhập nhanh bằng AI</h3><p class="mute" style="margin-bottom:8px">Gõ một câu mô tả, AI tự điền sẵn bên dưới. Ví dụ: "ăn trưa 50k tiền mặt".</p>
+  <div style="display:flex;gap:8px"><input id="qk-q" placeholder="Nhập câu mô tả giao dịch..." ${AI.qkBusy?'disabled':''}><button class="pri" style="width:auto;padding:0 16px" id="qk-go" ${AI.qkBusy?'disabled':''}>✨</button></div>
+  <div style="margin-top:8px"><button class="pri" style="background:var(--acc2);color:var(--acc)" id="receipt-go" ${AI.qkBusy?'disabled':''}>${AI.qkBusy?'Đang xử lý…':'📷 Quét hóa đơn'}</button><input type="file" accept="image/*" capture="environment" id="receipt-file" style="display:none"></div></div>`;
+  $('#v-add').innerHTML=quick+`${cur.edit?'<h3 style="margin:4px 2px 10px">Sửa giao dịch</h3>':''}<div class="seg" ${cur.edit?'style="display:none"':''}>${[['chi','Chi tiêu'],['thu','Thu nhập'],['ck','Chuyển ví']].map(([k,n])=>`<button data-ty="${k}" class="${ty===k?'on':''}">${n}</button>`).join('')}</div>${body}
   <div class="card"><div class="net" id="net"></div>${ck?'':`<label>Nhóm<select id="cat">${(chi?CC:CT).map(c=>`<option value="${c}">${CI[c]||''} ${c}</option>`).join('')}</select></label>`}
-  <label>Ngày<input type="date" id="dt" value="${today()}"></label><label>Giờ<input type="time" id="tm" value="${nowT()}"></label><label>Ghi chú<input id="nt" maxlength="80" placeholder="Ví dụ: cơm trưa, góp quỹ laptop"></label><button class="pri" id="ok">${cur.edit?'Lưu thay đổi':'Lưu giao dịch'}</button>${cur.edit?'<button class="del" data-ce="1" style="margin:8px auto 0">Hủy sửa</button>':''}</div>`;
+  <label>Ngày<input type="date" id="dt" value="${today()}"></label><label>Giờ<input type="time" id="tm" value="${nowT()}"></label><label>Ghi chú<input id="nt" maxlength="80" placeholder="Ví dụ: cơm trưa, góp quỹ laptop"></label><div id="cat-sugg" class="mute" style="margin:-6px 0 10px"></div><button class="pri" id="ok">${cur.edit?'Lưu thay đổi':'Lưu giao dịch'}</button>${cur.edit?'<button class="del" data-ce="1" style="margin:8px auto 0">Hủy sửa</button>':''}</div>`;
   const o=cur.edit&&S.tx.find(x=>x.id==cur.edit);
   if(o){$('#dt').value=o.date;$('#tm').value=txTime(o)||nowT();$('#nt').value=o.note||'';if($('#cat')&&o.cat)$('#cat').value=o.cat}
+  else if(cur.draft){const d=cur.draft;if($('#nt'))$('#nt').value=d.note||'';if(d.date&&$('#dt'))$('#dt').value=d.date;if(d.cat&&$('#cat'))$('#cat').value=d.cat;cur.draft=null}
   upd();
 }
 function upd(){
@@ -269,6 +298,7 @@ function step(k,d,s,wid){
   if(k!=='in'&&isC(cur.wid)&&v>have){v=have;toast('Ví chỉ có '+have+' tờ '+vn(d))}
   cur[k][d]=v;upd();
 }
+function catAvg(cat,excludeId){const xs=S.tx.filter(t=>t.net<0&&t.cat===cat&&t.id!==excludeId).map(t=>-t.net);return xs.length>=3?xs.reduce((a,b)=>a+b,0)/xs.length:null}
 function submit(){
   const w=W(cur.wid),date=$('#dt').value||today(),time=$('#tm').value||nowT(),note=$('#nt').value.trim(),bk=!isC(cur.wid),amt=Math.round(+cur.amt||0);let t,msg=cur.edit?'Đã cập nhật giao dịch':'Đã lưu giao dịch';
   if(cur.type==='ck'){
@@ -290,7 +320,10 @@ function submit(){
   commit(ws);
   if(old)S.tx=S.tx.map(x=>x.id==old.id?t:x);else S.tx.push(t);
   const a2=spent(),ac=t.cat?cs(t.cat):0,bg=t.cat&&S.budgets[t.cat];
+  let anomaly=null;
+  if(t.type==='chi'){const avg=catAvg(t.cat,t.id);if(avg&&-t.net>=avg*2.2)anomaly=`🔔 Khoản chi ${fmt(-t.net)} cho ${t.cat} cao hơn nhiều so với trung bình ${fmt(Math.round(avg))} các lần trước`}
   if(t.type==='ck'){const o=W(t.to);if(!old)msg=`Đã chuyển ${fmt(t.amt)} sang ví "${o.name}"`+(o.target&&wt(o)>=o.target?', ví đã đạt mục tiêu 🎉':'')}
+  else if(anomaly)msg=anomaly;
   else if(bg&&bc<bg&&ac>=bg)msg=`⛔ Đã vượt ngân sách ${t.cat} tháng này`;
   else if(bg&&bc<bg*.8&&ac>=bg*.8)msg=`⚠️ Bạn đã sử dụng 80% ngân sách ${t.cat} tháng này`;
   else if(S.limit&&b<S.limit&&a2>=S.limit)msg='⛔ Bạn đã vượt hạn mức chi tháng này';
@@ -328,10 +361,13 @@ function del(id){
   if(bad(ws)){toast('Không thể xóa: các ví không còn đủ tờ hoặc số dư để hoàn tác giao dịch này');return}
   commit(ws);S.tx=S.tx.filter(x=>x.id!=id);save();render();toast('Đã xóa giao dịch và hoàn lại số tờ vào ví');
 }
-document.addEventListener('keydown',e=>{if(e.target.id==='ai-q'&&e.key==='Enter'){e.preventDefault();aiSend()}});
+document.addEventListener('keydown',e=>{if(e.target.id==='ai-q'&&e.key==='Enter'){e.preventDefault();aiSend()}else if(e.target.id==='qk-q'&&e.key==='Enter'){e.preventDefault();quickParse()}});
+let catSuggT;
 document.addEventListener('input',e=>{if(e.target.id==='amt'){cur.amt=+e.target.value||0;upd();return}
-  const k=e.target.dataset&&e.target.dataset.f;if(k){F[k]=e.target.value;hl()}});
-let AI={provider:'gemini',gKey:'',gModel:'gemini-3-flash-preview',kKey:'',kModel:'kira-mini-1.0',msgs:[],insight:'',busyC:false,busyI:false};
+  const k=e.target.dataset&&e.target.dataset.f;if(k){F[k]=e.target.value;hl();return}
+  if(e.target.id==='nt'&&cur.type!=='ck'){const val=e.target.value.trim();clearTimeout(catSuggT);const sg=$('#cat-sugg');if(sg)sg.innerHTML='';if(val.length>=3&&aiHasKey())catSuggT=setTimeout(()=>suggestCat(val),700)}
+});
+let AI={provider:'gemini',gKey:'',gModel:'gemini-3-flash-preview',kKey:'',kModel:'kira-mini-1.0',msgs:[],insight:'',busyC:false,busyI:false,qkBusy:false,plan:{},planBusy:{}};
 try{
   const c=JSON.parse(localStorage.getItem('sct_ai'))||{};
   AI.provider=c.provider||(c.key?'gemini':AI.provider);
@@ -405,6 +441,77 @@ async function aiInsight(){
   const ans=await askAI(sys,[{role:'user',text:prompt}]);
   AI.busyI=false;if(ans)AI.insight=ans;aiTab();
 }
+async function callGeminiVision(sys,text,mime,b64){
+  if(!AI.gKey)throw new Error('Chưa nhập khóa API Gemini');
+  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(AI.gModel||'gemini-3-flash-preview')}:generateContent`,{
+    method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':AI.gKey},
+    body:JSON.stringify({systemInstruction:{parts:[{text:sys}]},contents:[{role:'user',parts:[{text},{inline_data:{mime_type:mime,data:b64}}]}],generationConfig:{temperature:0.2}})
+  });
+  const d=await r.json();
+  if(!r.ok)throw new Error((d.error&&d.error.message)||('Lỗi HTTP '+r.status));
+  const out=((d.candidates&&d.candidates[0]&&d.candidates[0].content&&d.candidates[0].content.parts)||[]).map(p=>p.text||'').join('').trim();
+  if(!out)throw new Error('Không nhận được nội dung trả lời');
+  return out;
+}
+async function callKiraVision(sys,text,mime,b64){
+  if(!AI.kKey)throw new Error('Chưa nhập khóa API Kira AI');
+  const r=await fetch('https://kiraai.vn/api/v1/chat/completions',{
+    method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+AI.kKey},
+    body:JSON.stringify({model:AI.kModel||'kira-mini-1.0',messages:[{role:'system',content:sys},{role:'user',content:[{type:'text',text},{type:'image_url',image_url:{url:`data:${mime};base64,${b64}`}}]}]})
+  });
+  const d=await r.json();
+  if(!r.ok)throw new Error((d.error&&(d.error.message||d.error))||('Lỗi HTTP '+r.status));
+  const out=d.choices&&d.choices[0]&&d.choices[0].message&&d.choices[0].message.content;
+  if(!out)throw new Error('Không nhận được nội dung trả lời');
+  return String(out).trim();
+}
+async function askAIVision(sys,text,mime,b64){
+  try{return AI.provider==='kira'?await callKiraVision(sys,text,mime,b64):await callGeminiVision(sys,text,mime,b64)}
+  catch(e){toast('Lỗi gọi AI: '+(e.message||e));return null}
+}
+async function suggestCat(note){
+  const list=cur.type==='thu'?CT:CC;
+  const sys=`Chỉ trả về đúng tên 1 danh mục trong danh sách sau, không thêm chữ nào khác: ${list.join(', ')}.`;
+  const ans=await askAI(sys,[{role:'user',text:note}]);
+  if(!ans)return;
+  const low=fold(ans.trim()),cat=list.find(c=>fold(c)===low)||list.find(c=>low.includes(fold(c)));
+  const sg=$('#cat-sugg');if(!sg||!cat)return;
+  if(!$('#nt')||$('#nt').value.trim()!==note)return;
+  sg.innerHTML=`Gợi ý: <button class="del" style="display:inline;padding:0;color:var(--acc)" data-pick="${esc(cat)}">${ci(cat)}</button>`;
+}
+async function quickParse(){
+  const el=$('#qk-q'),q=el&&el.value.trim();if(!q)return;
+  if(!aiHasKey()){toast('Nhập khóa API cho '+(AI.provider==='kira'?'Kira AI':'Gemini')+' trước đã (ở tab AI)');return}
+  AI.qkBusy=true;addV();
+  const sys=`Bạn là bộ phân tích câu lệnh chi tiêu tiếng Việt. Chỉ trả về đúng một JSON, không thêm chữ nào khác, theo khuôn: {"type":"chi"|"thu"|"ck","amount":number,"category":string hoặc null,"wallet":string hoặc null,"toWallet":string hoặc null,"note":string,"date":"YYYY-MM-DD" hoặc null}. Danh sách ví hiện có: ${S.wallets.map(w=>w.name).join(', ')}. Danh mục chi: ${CC.join(', ')}. Danh mục thu: ${CT.join(', ')}. amount là số nguyên đơn vị đồng (ví dụ "50k" nghĩa là 50000, "5 triệu" nghĩa là 5000000). Nếu không chắc wallet hoặc category, để null.`;
+  const ans=await askAI(sys,[{role:'user',text:q}]);
+  AI.qkBusy=false;
+  const j=ans&&parseAIJson(ans);
+  if(!j||!j.amount){toast('Không hiểu được câu này, thử ghi rõ hơn nhé');addV();return}
+  applyDraft(j);
+}
+async function scanReceipt(mime,b64){
+  if(!aiHasKey()){toast('Nhập khóa API cho '+(AI.provider==='kira'?'Kira AI':'Gemini')+' trước đã (ở tab AI)');return}
+  AI.qkBusy=true;addV();
+  const sys=`Bạn là bộ trích xuất dữ liệu hóa đơn tiếng Việt. Chỉ trả về đúng một JSON, không thêm chữ nào khác, theo khuôn: {"amount":number,"category":string hoặc null,"note":string,"date":"YYYY-MM-DD" hoặc null}. category chỉ chọn trong danh sách: ${CC.join(', ')}. amount là tổng tiền trên hóa đơn, số nguyên, đơn vị đồng. note là tên cửa hàng hoặc mặt hàng chính, ngắn gọn.`;
+  const ans=await askAIVision(sys,'Đọc hóa đơn trong ảnh này và trích xuất thông tin.',mime,b64);
+  AI.qkBusy=false;
+  const j=ans&&parseAIJson(ans);
+  if(!j||!j.amount){toast('Không đọc được số tiền trên hóa đơn, thử ảnh rõ hơn nhé');addV();return}
+  applyDraft(j,'chi');
+}
+async function aiPlan(wid){
+  const w=W(wid);if(!w)return;
+  if(!aiHasKey()){toast('Nhập khóa API cho '+(AI.provider==='kira'?'Kira AI':'Gemini')+' trước đã (ở tab AI)');return}
+  AI.planBusy[wid]=true;wal();
+  const left=Math.max(0,w.target-wt(w)),d=w.deadline?days(w):null;
+  const ms=[...Array(6)].map((_,i)=>{const dt=new Date(month+'-01T00:00:00Z');dt.setUTCMonth(dt.getUTCMonth()-5+i);const mm=dt.toISOString().slice(0,7);const x=S.tx.filter(t=>t.date.startsWith(mm)),ii=x.filter(t=>t.net>0).reduce((a,t)=>a+t.net,0),ee=-x.filter(t=>t.net<0).reduce((a,t)=>a+t.net,0);return ii-ee});
+  const avgSurplus=Math.round(ms.reduce((a,b)=>a+b,0)/ms.length);
+  const sys='Bạn là cố vấn tài chính cá nhân, trả lời bằng tiếng Việt, ngắn gọn, không chào hỏi.';
+  const prompt=`Lập kế hoạch tiết kiệm cho mục tiêu ví "${w.name}": còn thiếu ${vnfmt(left)}${d!=null?`, còn ${d} ngày đến hạn`:' (chưa đặt hạn chót)'}. Thặng dư thu-chi trung bình 6 tháng gần đây khoảng ${vnfmt(avgSurplus)}/tháng. Viết 2-3 câu đánh giá khả năng đạt mục tiêu và đề xuất mức để dành mỗi tháng cụ thể, kèm 1-2 gợi ý cắt giảm nếu thặng dư hiện tại chưa đủ.`;
+  const ans=await askAI(sys,[{role:'user',text:prompt}]);
+  AI.planBusy[wid]=false;if(ans)AI.plan[wid]=ans;wal();
+}
 function aiTab(){
   $('#v-ai').innerHTML=`<div class="card"><h3>Nhà cung cấp AI</h3><p class="mute" style="margin-bottom:8px">Chọn AI dùng cho chat và phân tích bên dưới, đổi qua lại không mất cấu hình đã lưu của bên kia.</p>
   <div class="seg"><button data-prov="gemini" class="${AI.provider==='gemini'?'on':''}">Google Gemini</button><button data-prov="kira" class="${AI.provider==='kira'?'on':''}">Kira AI</button></div></div>
@@ -460,11 +567,16 @@ document.addEventListener('click',e=>{
   else if(q.ai==='save')aiSave();
   else if(q.ai==='insight')aiInsight();
   else if(b.id==='ai-send')aiSend();
+  else if(q.pick){if($('#cat'))$('#cat').value=q.pick}
+  else if(q.plan)aiPlan(q.plan);
+  else if(b.id==='qk-go')quickParse();
+  else if(b.id==='receipt-go'){const f=$('#receipt-file');if(f)f.click()}
   else if(b.id==='ok')submit();
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='wl'){cur.wid=+e.target.value;cur.out={};cur.mv={};cur.to=0;cur.amt=0;addV()}
   else if(e.target.id==='to'){cur.to=+e.target.value;cur.mv={};cur.amt=0;addV()}
+  else if(e.target.id==='receipt-file'){const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{scanReceipt(f.type||'image/jpeg',rd.result.split(',')[1]);e.target.value=''};rd.readAsDataURL(f)}
 });
 document.addEventListener('toggle',e=>{if(e.target.tagName==='DETAILS'){const id=+e.target.dataset.id;e.target.open?open.add(id):open.delete(id)}},true);
 $('#mo').addEventListener('change',e=>{month=e.target.value||month;if(tab!=='add'&&tab!=='w')render()});
