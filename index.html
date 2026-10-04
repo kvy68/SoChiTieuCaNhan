@@ -94,7 +94,7 @@ body::before{content:'';position:fixed;top:-120px;left:50%;transform:translateX(
 </style>
 </head>
 <body>
-<div id="lockscreen" class="lockscreen" hidden><div class="lock-card"><div style="font-size:40px;margin-bottom:8px">🔒</div><h3 style="margin-bottom:4px">Nhập mã PIN</h3><p class="mute" id="lock-msg" style="margin-bottom:14px">Mở khóa để xem Sổ chi tiêu</p><input id="lock-in" type="password" inputmode="numeric" maxlength="6" style="text-align:center;font-size:22px;letter-spacing:8px"><button class="pri" id="lock-go" style="margin-top:12px">Mở khóa</button><button class="del" id="lock-forgot" style="margin-top:10px">Quên mã PIN?</button></div></div>
+<div id="lockscreen" class="lockscreen" hidden><div class="lock-card"><div style="font-size:40px;margin-bottom:8px">🔒</div><h3 style="margin-bottom:4px">Nhập mã PIN</h3><p class="mute" id="lock-msg" style="margin-bottom:14px">Mở khóa để xem Sổ chi tiêu</p><input id="lock-in" type="password" inputmode="numeric" maxlength="6" style="text-align:center;font-size:22px;letter-spacing:8px"><button class="pri" id="lock-go" style="margin-top:12px">Mở khóa</button></div></div>
 <div class="w">
 <header>
   <div><h1>Tổng số dư các ví</h1><div style="display:flex;align-items:center;gap:6px"><div id="total"></div><button id="eye" class="eye"></button></div></div>
@@ -207,14 +207,17 @@ function bars(){
   const ms=[...Array(6)].map((_,i)=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-5+i);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')});
   const v=ms.map(m=>{const x=S.tx.filter(t=>t.date.startsWith(m));return{m,i:x.filter(t=>t.net>0).reduce((a,t)=>a+t.net,0),e:-x.filter(t=>t.net<0).reduce((a,t)=>a+t.net,0)}});
   const mx=Math.max(1,...v.map(x=>Math.max(x.i,x.e)));
-  return `<svg viewBox="0 0 300 130" width="100%" role="img" aria-label="Thu chi 6 tháng gần nhất">${v.map((x,g)=>{const hi=x.i/mx*95,he=x.e/mx*95;return `<rect class="bi" x="${g*50+7}" y="${105-hi}" width="16" height="${hi}" rx="2"><title>Thu ${fmt(x.i)}</title></rect><rect class="be" x="${g*50+26}" y="${105-he}" width="16" height="${he}" rx="2"><title>Chi ${fmt(x.e)}</title></rect><text x="${g*50+25}" y="121" text-anchor="middle">T${x.m.slice(5)}</text>`}).join('')}</svg><div class="lg"><i style="background:var(--pos)"></i>Thu <i style="background:var(--neg);margin-left:10px"></i>Chi <span class="mute">(cột cao nhất: ${fmt(mx)})</span></div>`;
+  return `<svg viewBox="0 0 300 130" width="100%" role="img" aria-label="Thu chi 6 tháng gần nhất, bấm một tháng để xem chi tiết tháng đó">${v.map((x,g)=>{const hi=x.i/mx*95,he=x.e/mx*95,cur=x.m===month;return `<g data-month="${x.m}" style="cursor:pointer"><rect x="${g*50+2}" y="2" width="46" height="120" rx="5" fill="${cur?'var(--acc2)':'transparent'}"/><rect class="bi" x="${g*50+7}" y="${105-hi}" width="16" height="${hi}" rx="2"><title>Thu ${fmt(x.i)}</title></rect><rect class="be" x="${g*50+26}" y="${105-he}" width="16" height="${he}" rx="2"><title>Chi ${fmt(x.e)}</title></rect><text x="${g*50+25}" y="121" text-anchor="middle" ${cur?'font-weight="700" fill="var(--acc)"':''}>T${x.m.slice(5)}</text></g>`}).join('')}</svg><div class="lg"><i style="background:var(--pos)"></i>Thu <i style="background:var(--neg);margin-left:10px"></i>Chi <span class="mute">(cột cao nhất: ${fmt(mx)}, bấm 1 tháng để xem)</span></div>`;
 }
 function donut(c){
   const e=Object.entries(c).sort((a,b)=>b[1]-a[1]),t=e.reduce((a,x)=>a+x[1],0);
   if(!t)return '<p class="mute">Chưa có khoản chi nào trong tháng này.</p>';
+  if(selCat&&!(selCat in c))selCat=null;
   let o=25;
-  const arcs=e.map(([k,v],i)=>{const p=v/t*100,s=`<circle r="15.9155" cx="21" cy="21" fill="none" stroke="${PAL[i%8]}" stroke-width="7" stroke-dasharray="${p} ${100-p}" stroke-dashoffset="${o}"><title>${esc(k)}</title></circle>`;o-=p;return s}).join('');
-  return `<div class="dn"><svg viewBox="0 0 42 42" width="130" height="130" role="img" aria-label="Chi tiêu theo nhóm">${arcs}</svg><div>${e.map(([k,v],i)=>`<div class="lg"><i style="background:${PAL[i%8]}"></i>${ci(k)} <b>${Math.round(v/t*100)}%</b> <span class="mute">${fmt(v)}</span></div>`).join('')}</div></div>`;
+  const arcs=e.map(([k,v],i)=>{const p=v/t*100,sel=selCat===k,dim=!!selCat&&!sel,s=`<circle data-cat="${esc(k)}" r="15.9155" cx="21" cy="21" fill="none" stroke="${PAL[i%8]}" stroke-width="${sel?9:7}" stroke-dasharray="${p} ${100-p}" stroke-dashoffset="${o}" style="cursor:pointer;opacity:${dim?.35:1};transition:opacity .2s,stroke-width .2s"><title>${esc(k)}</title></circle>`;o-=p;return s}).join('');
+  const legend=e.map(([k,v],i)=>`<div class="lg" data-cat="${esc(k)}" style="cursor:pointer;opacity:${selCat&&selCat!==k?.55:1}"><i style="background:${PAL[i%8]}"></i>${ci(k)} <b>${Math.round(v/t*100)}%</b> <span class="mute">${fmt(v)}</span></div>`).join('');
+  const detail=selCat&&c[selCat]!=null?`<div class="al ok" style="margin-top:8px"><span>${CI[selCat]||'🏷️'}</span><span>Đã chọn <b>${esc(selCat)}</b> — ${fmt(c[selCat])} (${Math.round(c[selCat]/t*100)}% chi tiêu tháng này). <button class="del" style="display:inline;padding:0;color:var(--acc)" data-catgo="${esc(selCat)}">Xem giao dịch →</button></span></div>`:'';
+  return `<div class="dn"><svg viewBox="0 0 42 42" width="130" height="130" role="img" aria-label="Chi tiêu theo nhóm, bấm một phần để xem chi tiết">${arcs}</svg><div>${legend}</div></div>${detail}`;
 }
 let rng=30;
 function trend(){
@@ -228,9 +231,9 @@ function trend(){
   const ln=(s,c,w)=>`<polyline fill="none" stroke="${c}" stroke-width="${w}" stroke-linejoin="round" points="${s.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ')}"/>`;
   const col=i=>PAL[(i+1)%8];
   return `<div class="seg">${[[30,'30 ngày'],[90,'3 tháng'],[365,'1 năm']].map(([r,l])=>`<button data-r="${r}" class="${rng===r?'on':''}">${l}</button>`).join('')}</div>
-  <svg viewBox="0 0 320 160" width="100%" role="img" aria-label="Số dư theo thời gian"><line x1="0" x2="320" y1="16" y2="16" stroke="var(--line)" stroke-dasharray="3 3"/><line x1="0" x2="320" y1="124" y2="124" stroke="var(--line)" stroke-dasharray="3 3"/><text x="0" y="10">Cao nhất ${fmt(hi)}</text><text x="0" y="137">Thấp nhất ${fmt(lo)}</text><text x="0" y="154">${fd(ds[0])}</text><text x="320" y="154" text-anchor="end">${fd(ds[n])}</text>${many?ws.map((s,i)=>ln(s,col(i),1.3)).join(''):''}${ln(tot,'var(--acc)',2.4)}</svg>
-  <div style="display:flex;flex-wrap:wrap;gap:2px 12px"><div class="lg"><i style="background:var(--acc)"></i>Tổng</div>${many?S.wallets.map((w,i)=>`<div class="lg"><i style="background:${col(i)}"></i>${esc(w.name)}</div>`).join(''):''}</div>
-  <p class="mute" style="margin-top:6px">Số dư quá khứ được tính ngược từ số dư hiện tại, chưa gồm các lần kiểm kê thủ công.</p>`;
+  <svg viewBox="0 0 320 160" width="100%" role="img" aria-label="Số dư theo thời gian"><line x1="0" x2="320" y1="16" y2="16" stroke="var(--line)" stroke-dasharray="3 3"/><line x1="0" x2="320" y1="124" y2="124" stroke="var(--line)" stroke-dasharray="3 3"/><text x="0" y="10">Cao nhất ${fmt(hi)}</text><text x="0" y="137">Thấp nhất ${fmt(lo)}</text><text x="0" y="154">${fd(ds[0])}</text><text x="320" y="154" text-anchor="end">${fd(ds[n])}</text>${many?ws.map((s,i)=>hideWallets.has(S.wallets[i].id)?'':ln(s,col(i),1.3)).join(''):''}${ln(tot,'var(--acc)',2.4)}</svg>
+  <div style="display:flex;flex-wrap:wrap;gap:2px 12px"><div class="lg"><i style="background:var(--acc)"></i>Tổng</div>${many?S.wallets.map((w,i)=>`<div class="lg" data-wtoggle="${w.id}" style="cursor:pointer;opacity:${hideWallets.has(w.id)?.4:1}"><i style="background:${col(i)}"></i>${esc(w.name)}</div>`).join(''):''}</div>
+  <p class="mute" style="margin-top:6px">Số dư quá khứ được tính ngược từ số dư hiện tại, chưa gồm các lần kiểm kê thủ công. ${many?'Bấm tên ví để ẩn/hiện đường của ví đó.':''}</p>`;
 }
 function home(){
   const m=monthTx(),inc=m.filter(t=>t.net>0).reduce((a,t)=>a+t.net,0),exp=-m.filter(t=>t.net<0).reduce((a,t)=>a+t.net,0),cats={};
@@ -405,7 +408,9 @@ document.addEventListener('input',e=>{if(e.target.id==='amt'){cur.amt=+e.target.
 let AI={provider:'gemini',gKey:'',gModel:'gemini-3-flash-preview',kKey:'',kModel:'kira-mini-1.0',msgs:[],insight:'',busyC:false,busyI:false,qkBusy:false,plan:{},planBusy:{}};
 let pinHash='';try{pinHash=localStorage.getItem('sct_pin')||''}catch(e){}
 let locked=!!pinHash;
-let pinConfirming=false,pinDraft='',forgetConfirm=false;
+let pinConfirming=false,pinDraft='';
+let selCat=null,hideWallets=new Set();
+function monthEnd(m){const[y,mo]=m.split('-').map(Number);return new Date(y,mo,0).getDate()}
 try{
   const c=JSON.parse(localStorage.getItem('sct_ai'))||{};
   AI.provider=c.provider||(c.key?'gemini':AI.provider);
@@ -574,12 +579,6 @@ function confirmImport(){
 }
 function cancelImport(){pendingImport=null;wal()}
 async function sha(s){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('')}
-function forgotPin(){
-  if(!forgetConfirm){forgetConfirm=true;const m=$('#lock-msg');if(m)m.textContent='Mã PIN sẽ bị xóa, dữ liệu chi tiêu không mất. Bấm "Quên mã PIN?" lần nữa để xác nhận.';return}
-  pinHash='';try{localStorage.removeItem('sct_pin')}catch(e){}
-  locked=false;forgetConfirm=false;const ls=$('#lockscreen');if(ls)ls.hidden=true;
-  toast('Đã xóa mã PIN, bạn có thể đặt lại ở tab Ví nếu muốn');
-}
 async function tryUnlock(){
   const el=$('#lock-in'),v=el&&el.value.trim();if(!v)return;
   const h2=await sha(v);
@@ -668,7 +667,14 @@ function rmW(id){
   else{S.wallets=S.wallets.filter(x=>x.id!=id);save();render();toast('Đã xóa ví')}
 }
 document.addEventListener('click',e=>{
+  const catEl=e.target.closest('[data-cat]');
+  if(catEl&&!e.target.closest('button')){selCat=selCat===catEl.dataset.cat?null:catEl.dataset.cat;home();return}
+  const mEl=e.target.closest('[data-month]');
+  if(mEl){month=mEl.dataset.month;const mo=$('#mo');if(mo)mo.value=month;home();return}
+  const wEl=e.target.closest('[data-wtoggle]');
+  if(wEl){const id=+wEl.dataset.wtoggle;hideWallets.has(id)?hideWallets.delete(id):hideWallets.add(id);home();return}
   const b=e.target.closest('button');if(!b)return;const q=b.dataset;
+  if(q.catgo){F={q:'',ty:'chi',w:'',c:q.catgo,min:'',max:'',from:month+'-01',to:month+'-'+String(monthEnd(month)).padStart(2,'0')};tab='hist';render();return}
   if(q.t){tab=q.t;render();const el=$('#v-'+q.t);if(el){el.classList.remove('enter');void el.offsetWidth;el.classList.add('enter')}}
   else if(q.k)step(q.k,+q.d,+q.s,q.w);
   else if(q.del)del(q.del);
@@ -700,7 +706,6 @@ document.addEventListener('click',e=>{
   else if(q.pin==='on')setPin();
   else if(q.pin==='off')removePin();
   else if(b.id==='lock-go')tryUnlock();
-  else if(b.id==='lock-forgot')forgotPin();
   else if(q.pin==='cancel')cancelPin();
   else if(b.id==='ok')submit();
 });
