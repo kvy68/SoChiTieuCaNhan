@@ -87,6 +87,7 @@ body::before{content:'';position:fixed;top:-120px;left:50%;transform:translateX(
 .tab-ind{position:absolute;top:4px;bottom:4px;border-radius:10px;background:var(--card);box-shadow:var(--shadow);transition:left .28s cubic-bezier(.22,.9,.32,1),width .28s cubic-bezier(.22,.9,.32,1);z-index:0}
 .tab{position:relative;z-index:1}
 .lockscreen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999;padding:20px}
+.lockscreen[hidden]{display:none!important}
 .lock-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px 24px;max-width:320px;width:100%;text-align:center;box-shadow:var(--shadow)}
 .shake{animation:shakeX .4s}
 @keyframes shakeX{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
@@ -712,7 +713,7 @@ document.addEventListener('change',e=>{
 document.addEventListener('toggle',e=>{if(e.target.tagName==='DETAILS'){const id=+e.target.dataset.id;e.target.open?open.add(id):open.delete(id)}},true);
 $('#mo').addEventListener('change',e=>{month=e.target.value||month;if(tab!=='add'&&tab!=='w')render()});
 runRecurring();
-//if(locked){const ls=$('#lockscreen');if(ls)ls.hidden=false}
+if(locked){const ls=$('#lockscreen');if(ls)ls.hidden=false}
 render();
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}))}</script>
