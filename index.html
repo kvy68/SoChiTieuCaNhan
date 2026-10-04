@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sổ chi tiêu theo tờ tiền (đồng bộ Supabase)</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0b6e5a">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sổ chi tiêu">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&display=swap">
 <style>
 :root{--bg:#eaf0ee;--card:#fff;--ink:#10231d;--mute:#5f7069;--line:#dbe4e0;--acc:#0b6e5a;--acc2:#e1efeb;--on:#fff;--neg:#b93815;--pos:#0b6e5a;--shadow:0 1px 2px rgba(16,35,29,.05),0 6px 18px rgba(16,35,29,.07);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -21,7 +27,8 @@ input,select{width:100%;margin-top:4px;padding:11px;border:1px solid var(--line)
 input:focus,select:focus{border-color:var(--acc)}
 .tabs,.seg{display:flex;gap:4px;background:var(--acc2);padding:4px;border-radius:13px;margin-bottom:12px}
 .tab,.seg button{flex:1;border:0;background:none;padding:9px;border-radius:10px;font:inherit;font-weight:600;color:var(--mute);cursor:pointer;transition:background-color .22s ease,color .22s ease,box-shadow .22s ease,transform .12s ease}
-.tab.on,.seg button.on{background:var(--card);color:var(--acc);box-shadow:var(--shadow)}
+.tab.on{color:var(--acc)}
+.seg button.on{background:var(--card);color:var(--acc);box-shadow:var(--shadow)}
 .tab:active,.seg button:active{transform:scale(.95)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px;margin-bottom:12px;box-shadow:var(--shadow)}
 h3{margin:0 0 4px;font-size:15px}
@@ -75,9 +82,18 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 main>section.enter{animation:fadeUp .32s cubic-bezier(.2,.8,.3,1) both}
 @keyframes fadeUp{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
 @keyframes popIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+body::before{content:'';position:fixed;top:-120px;left:50%;transform:translateX(-50%);width:480px;height:280px;background:radial-gradient(ellipse at center,var(--acc) 0%,transparent 70%);opacity:.12;filter:blur(40px);pointer-events:none;z-index:-1}
+.tabs{position:relative}
+.tab-ind{position:absolute;top:4px;bottom:4px;border-radius:10px;background:var(--card);box-shadow:var(--shadow);transition:left .28s cubic-bezier(.22,.9,.32,1),width .28s cubic-bezier(.22,.9,.32,1);z-index:0}
+.tab{position:relative;z-index:1}
+.lockscreen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999;padding:20px}
+.lock-card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px 24px;max-width:320px;width:100%;text-align:center;box-shadow:var(--shadow)}
+.shake{animation:shakeX .4s}
+@keyframes shakeX{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
 </style>
 </head>
 <body>
+<div id="lockscreen" class="lockscreen" hidden><div class="lock-card"><div style="font-size:40px;margin-bottom:8px">🔒</div><h3 style="margin-bottom:4px">Nhập mã PIN</h3><p class="mute" id="lock-msg" style="margin-bottom:14px">Mở khóa để xem Sổ chi tiêu</p><input id="lock-in" type="password" inputmode="numeric" maxlength="6" style="text-align:center;font-size:22px;letter-spacing:8px"><button class="pri" id="lock-go" style="margin-top:12px">Mở khóa</button></div></div>
 <div class="w">
 <header>
   <div><h1>Tổng số dư các ví</h1><div style="display:flex;align-items:center;gap:6px"><div id="total"></div><button id="eye" class="eye"></button></div></div>
@@ -112,7 +128,7 @@ let F={q:'',ty:'',w:'',c:'',min:'',max:'',from:'',to:''};
 const fOn=()=>Object.values(F).some(v=>v!=='');
 const cs=(c,m)=>-S.tx.filter(t=>t.date.startsWith(m||today().slice(0,7))&&t.net<0&&t.cat===c).reduce((a,t)=>a+t.net,0);
 function norm(){
-  S.wallets=S.wallets||[];S.tx=S.tx||[];S.limit=S.limit||0;S.budgets=S.budgets||{};
+  S.wallets=S.wallets||[];S.tx=S.tx||[];S.limit=S.limit||0;S.budgets=S.budgets||{};S.recurring=S.recurring||[];
   if(!S.wallets.length)S.wallets=[{id:1,name:'Ví tiền mặt',notes:{},target:0,deadline:''}];
   S.wallets.forEach(w=>{w.kind=w.kind||'cash';w.bal=w.bal||0;w.notes=w.notes||{};D.forEach(d=>w.notes[d]=w.notes[d]||0)});
   S.tx.forEach(t=>{if(t.cat==='Nhà ở & hóa đơn')t.cat='Sinh hoạt'});
@@ -160,6 +176,7 @@ function render(){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
   ['home','w','add','hist','ai'].forEach(t=>$('#v-'+t).hidden=t!==tab);
   ({home,w:wal,add:addV,hist,ai:aiTab})[tab]();
+  positionTabInd();
 }
 const stp=(k,d,n,wid)=>`<div class="step"><button data-k="${k}" data-d="${d}" data-s="-1" data-w="${wid||''}" aria-label="Bớt tờ ${vn(d)}">−</button><b>${n}</b><button data-k="${k}" data-d="${d}" data-s="1" data-w="${wid||''}" aria-label="Thêm tờ ${vn(d)}">+</button></div>`;
 const chip=d=>`<div class="chip" style="background:${COL[d]}">${vn(d)}</div>`;
@@ -236,7 +253,23 @@ function wal(){
   <label style="margin-top:12px">Tên ví<input id="n-${w.id}" value="${esc(w.name)}"></label><label>Số tiền mục tiêu (₫)<input id="t-${w.id}" type="number" min="0" step="1000" value="${w.target||''}"></label><label>Hạn chót<input id="d-${w.id}" type="date" value="${w.deadline||''}"></label>
   <button class="pri" data-sv="${w.id}">Lưu thay đổi</button><button class="del" data-rm="${w.id}">Xóa ví</button></details>`).join('')+
   `<div class="card"><h3>Hạn mức chi mỗi tháng</h3><label>Số tiền (₫), để trống nếu không dùng<input id="lm" type="number" min="0" step="1000" value="${S.limit||''}"></label><button class="pri" data-lm="1">Lưu hạn mức</button></div>`+
-  `<div class="card"><h3>Ngân sách theo danh mục</h3><p class="mute" style="margin-bottom:8px">Để trống nếu không đặt. App nhắc khi bạn dùng đến 80% và khi vượt ngân sách.</p>${CC.map((c,i)=>`<label>${CI[c]} ${c}<input id="bg-${i}" type="number" min="0" step="1000" value="${S.budgets[c]||''}"></label>`).join('')}<button class="pri" data-bg="1">Lưu ngân sách</button></div>`;
+  `<div class="card"><h3>Ngân sách theo danh mục</h3><p class="mute" style="margin-bottom:8px">Để trống nếu không đặt. App nhắc khi bạn dùng đến 80% và khi vượt ngân sách.</p>${CC.map((c,i)=>`<label>${CI[c]} ${c}<input id="bg-${i}" type="number" min="0" step="1000" value="${S.budgets[c]||''}"></label>`).join('')}<button class="pri" data-bg="1">Lưu ngân sách</button></div>`+
+  `<div class="card"><h3>🔁 Giao dịch định kỳ hàng tháng</h3><p class="mute" style="margin-bottom:8px">Tự tạo giao dịch vào ngày bạn chọn mỗi tháng, ngay khi bạn mở app. Hợp với tiền nhà, hóa đơn, lương cố định.</p>
+  <label>Loại<select id="rc-ty"><option value="chi">Chi</option><option value="thu">Thu</option></select></label>
+  <label>Ví<select id="rc-w">${S.wallets.map(w=>`<option value="${w.id}">${wn(w)}</option>`).join('')}</select></label>
+  <label>Danh mục<select id="rc-cat">${CC.concat(CT).map(c=>`<option value="${c}">${CI[c]||''} ${c}</option>`).join('')}</select></label>
+  <label>Số tiền (₫)<input id="rc-amt" type="number" min="0" step="1000"></label>
+  <label>Ngày trong tháng (1-28)<input id="rc-day" type="number" min="1" max="28" value="1"></label>
+  <label>Ghi chú<input id="rc-note" maxlength="60" placeholder="Ví dụ: Tiền nhà tháng"></label>
+  <button class="pri" data-rc="add">Thêm định kỳ</button>
+  ${(S.recurring||[]).length?'<hr>'+S.recurring.map(r=>`<div class="wl"><div style="display:flex;justify-content:space-between;gap:8px"><b>${ci(r.cat)} — ${fmt(r.amount)}</b><button class="del" data-rc="${r.id}">Xóa</button></div><p class="mute">${r.type==='chi'?'Chi':'Thu'} · ${wn(W(r.wid)||{name:'ví đã xóa',kind:'cash'})} · ngày ${r.day} hàng tháng${r.note?' · '+esc(r.note):''}${r.lastRun?' · đã tạo tháng '+r.lastRun:''}</p></div>`).join(''):''}</div>`+
+  `<div class="card"><h3>💾 Sao lưu & khôi phục</h3><p class="mute" style="margin-bottom:8px">Xuất dữ liệu ra file để lưu phòng hờ, hoặc nhập lại khi đổi máy. Không gồm khóa API hay mã PIN.</p>
+  <button class="pri" data-bk="export">Xuất file sao lưu</button>
+  <button class="pri" style="margin-top:8px;background:var(--acc2);color:var(--acc)" data-bk="pick">Nhập file sao lưu</button>
+  <input type="file" accept="application/json" id="bk-file" style="display:none">
+  ${pendingImport?`<div class="al warn" style="margin-top:10px"><span>⚠️</span><span>File có ${pendingImport.wallets.length} ví, ${pendingImport.tx.length} giao dịch. Nhập sẽ <b>thay thế toàn bộ</b> dữ liệu hiện tại trên máy này.</span></div><button class="pri" data-bk="confirm">Xác nhận nhập</button><button class="del" data-bk="cancel">Hủy</button>`:''}</div>`+
+  `<div class="card"><h3>🔒 Khóa app bằng mã PIN</h3><p class="mute" style="margin-bottom:8px">Chỉ lưu trên máy này, yêu cầu nhập lại mỗi khi mở app. Không chặn được người rành kỹ thuật mở devtools, chỉ chống xem lướt qua.</p>
+  ${pinHash?`<label>Nhập mã PIN hiện tại để tắt khóa<input id="pin-cur" type="password" inputmode="numeric" maxlength="6"></label><button class="pri" data-pin="off">Tắt khóa PIN</button>`:`<label>Đặt mã PIN (4-6 số)<input id="pin-new" type="password" inputmode="numeric" maxlength="6"></label><label>Nhập lại mã PIN<input id="pin-confirm" type="password" inputmode="numeric" maxlength="6"></label><button class="pri" data-pin="on">Đặt mã PIN</button>`}</div>`;
 }
 function splitNotes(amount){const out={};let rem=Math.max(0,Math.round(amount));for(const d of R){const take=Math.floor(rem/d);if(take>0){out[d]=take;rem-=take*d}}return{notes:out,rem}}
 function greedyNotes(amount,w){const out={};let rem=Math.max(0,Math.round(amount));for(const d of R){const have=w.notes[d]||0,take=Math.min(have,Math.floor(rem/d));if(take>0){out[d]=take;rem-=take*d}}return{notes:out,rem}}
@@ -361,13 +394,16 @@ function del(id){
   if(bad(ws)){toast('Không thể xóa: các ví không còn đủ tờ hoặc số dư để hoàn tác giao dịch này');return}
   commit(ws);S.tx=S.tx.filter(x=>x.id!=id);save();render();toast('Đã xóa giao dịch và hoàn lại số tờ vào ví');
 }
-document.addEventListener('keydown',e=>{if(e.target.id==='ai-q'&&e.key==='Enter'){e.preventDefault();aiSend()}else if(e.target.id==='qk-q'&&e.key==='Enter'){e.preventDefault();quickParse()}});
+document.addEventListener('keydown',e=>{if(e.target.id==='ai-q'&&e.key==='Enter'){e.preventDefault();aiSend()}else if(e.target.id==='qk-q'&&e.key==='Enter'){e.preventDefault();quickParse()}else if(e.target.id==='lock-in'&&e.key==='Enter'){e.preventDefault();tryUnlock()}});
+window.addEventListener('resize',positionTabInd);
 let catSuggT;
 document.addEventListener('input',e=>{if(e.target.id==='amt'){cur.amt=+e.target.value||0;upd();return}
   const k=e.target.dataset&&e.target.dataset.f;if(k){F[k]=e.target.value;hl();return}
   if(e.target.id==='nt'&&cur.type!=='ck'){const val=e.target.value.trim();clearTimeout(catSuggT);const sg=$('#cat-sugg');if(sg)sg.innerHTML='';if(val.length>=3&&aiHasKey())catSuggT=setTimeout(()=>suggestCat(val),700)}
 });
 let AI={provider:'gemini',gKey:'',gModel:'gemini-3-flash-preview',kKey:'',kModel:'kira-mini-1.0',msgs:[],insight:'',busyC:false,busyI:false,qkBusy:false,plan:{},planBusy:{}};
+let pinHash='';try{pinHash=localStorage.getItem('sct_pin')||''}catch(e){}
+let locked=!!pinHash;
 try{
   const c=JSON.parse(localStorage.getItem('sct_ai'))||{};
   AI.provider=c.provider||(c.key?'gemini':AI.provider);
@@ -512,6 +548,78 @@ async function aiPlan(wid){
   const ans=await askAI(sys,[{role:'user',text:prompt}]);
   AI.planBusy[wid]=false;if(ans)AI.plan[wid]=ans;wal();
 }
+let pendingImport=null;
+function doExportBackup(){
+  const data=JSON.stringify({wallets:S.wallets,tx:S.tx,budgets:S.budgets,limit:S.limit,recurring:S.recurring||[]});
+  const blob=new Blob([data],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=`so-chi-tieu-sao-luu-${today()}.json`;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);toast('Đã tải file sao lưu');
+}
+function pickBackupFile(){const f=$('#bk-file');if(f)f.click()}
+function onBackupFile(file){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    let j;try{j=JSON.parse(rd.result)}catch(e){toast('File không hợp lệ');return}
+    if(!j||!Array.isArray(j.wallets)||!Array.isArray(j.tx)){toast('File sao lưu không đúng định dạng');return}
+    pendingImport=j;wal();
+  };
+  rd.readAsText(file);
+}
+function confirmImport(){
+  if(!pendingImport)return;
+  S.wallets=pendingImport.wallets;S.tx=pendingImport.tx;S.budgets=pendingImport.budgets||{};S.limit=pendingImport.limit||0;S.recurring=pendingImport.recurring||[];
+  norm();pendingImport=null;save();render();toast('Đã khôi phục dữ liệu từ file sao lưu');
+}
+function cancelImport(){pendingImport=null;wal()}
+async function sha(s){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+async function tryUnlock(){
+  const el=$('#lock-in'),v=el&&el.value.trim();if(!v)return;
+  const h2=await sha(v);
+  if(h2===pinHash){locked=false;const ls=$('#lockscreen');if(ls)ls.hidden=true}
+  else{const card=document.querySelector('.lock-card');if(card){card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake')}const m=$('#lock-msg');if(m)m.textContent='Sai mã PIN, thử lại nhé';if(el)el.value=''}
+}
+async function setPin(){
+  const p1=($('#pin-new')||{}).value?.trim()||'',p2=($('#pin-confirm')||{}).value?.trim()||'';
+  if(!/^\d{4,6}$/.test(p1)){toast('Mã PIN phải gồm 4-6 chữ số');return}
+  if(p1!==p2){toast('Hai mã PIN chưa khớp');return}
+  pinHash=await sha(p1);try{localStorage.setItem('sct_pin',pinHash)}catch(e){}
+  wal();toast('Đã đặt mã PIN khóa app');
+}
+async function removePin(){
+  const p=($('#pin-cur')||{}).value?.trim()||'',h2=await sha(p);
+  if(h2!==pinHash){toast('Mã PIN hiện tại không đúng');return}
+  pinHash='';try{localStorage.removeItem('sct_pin')}catch(e){}
+  wal();toast('Đã tắt khóa PIN');
+}
+function addRecur(){
+  const wid=+$('#rc-w').value,type=$('#rc-ty').value,cat=$('#rc-cat').value,amt=Math.max(0,Math.round(+$('#rc-amt').value||0)),day=Math.min(28,Math.max(1,Math.round(+$('#rc-day').value||1))),note=$('#rc-note').value.trim();
+  if(!amt){toast('Nhập số tiền định kỳ');return}
+  S.recurring=S.recurring||[];S.recurring.push({id:Date.now(),wid,type,cat,amount:amt,day,note,lastRun:null});
+  save();wal();toast('Đã thêm giao dịch định kỳ');
+}
+function rmRecur(id){S.recurring=(S.recurring||[]).filter(r=>r.id!=id);save();wal();toast('Đã xóa giao dịch định kỳ')}
+function runRecurring(){
+  const cm=today().slice(0,7),td=today();let created=0;
+  (S.recurring||[]).forEach(r=>{
+    if(r.lastRun===cm)return;
+    const dueDate=cm+'-'+String(Math.min(r.day,28)).padStart(2,'0');
+    if(td<dueDate)return;
+    const w=W(r.wid);if(!w)return;
+    const amt=Math.round(r.amount);let out={},inn={};
+    if(isC(w.id)){const g=r.type==='chi'?greedyNotes(amt,w):splitNotes(amt);if(r.type==='chi')out=g.notes;else inn=g.notes}
+    const t={id:Date.now()+Math.floor(Math.random()*1000),type:r.type,wid:w.id,cat:r.cat,out:isC(w.id)?out:{},in:isC(w.id)?inn:{},net:r.type==='chi'?-amt:amt,time:nowT(),date:dueDate,note:r.note||'(định kỳ)'};
+    const ws=mkws();applyTx(ws,t,1);if(bad(ws))return;
+    commit(ws);S.tx.push(t);r.lastRun=cm;created++;
+  });
+  if(created){save();toast(`Đã tự động tạo ${created} giao dịch định kỳ tháng này`)}
+}
+function positionTabInd(){
+  const bar=document.querySelector('.tabs');if(!bar)return;
+  let ind=bar.querySelector('.tab-ind');
+  if(!ind){ind=document.createElement('span');ind.className='tab-ind';bar.insertBefore(ind,bar.firstChild)}
+  const btn=bar.querySelector('.tab.on');if(!btn)return;
+  ind.style.left=btn.offsetLeft+'px';ind.style.width=btn.offsetWidth+'px';
+}
 function aiTab(){
   $('#v-ai').innerHTML=`<div class="card"><h3>Nhà cung cấp AI</h3><p class="mute" style="margin-bottom:8px">Chọn AI dùng cho chat và phân tích bên dưới, đổi qua lại không mất cấu hình đã lưu của bên kia.</p>
   <div class="seg"><button data-prov="gemini" class="${AI.provider==='gemini'?'on':''}">Google Gemini</button><button data-prov="kira" class="${AI.provider==='kira'?'on':''}">Kira AI</button></div></div>
@@ -571,17 +679,30 @@ document.addEventListener('click',e=>{
   else if(q.plan)aiPlan(q.plan);
   else if(b.id==='qk-go')quickParse();
   else if(b.id==='receipt-go'){const f=$('#receipt-file');if(f)f.click()}
+  else if(q.rc==='add')addRecur();
+  else if(q.rc)rmRecur(q.rc);
+  else if(q.bk==='export')doExportBackup();
+  else if(q.bk==='pick')pickBackupFile();
+  else if(q.bk==='confirm')confirmImport();
+  else if(q.bk==='cancel')cancelImport();
+  else if(q.pin==='on')setPin();
+  else if(q.pin==='off')removePin();
+  else if(b.id==='lock-go')tryUnlock();
   else if(b.id==='ok')submit();
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='wl'){cur.wid=+e.target.value;cur.out={};cur.mv={};cur.to=0;cur.amt=0;addV()}
   else if(e.target.id==='to'){cur.to=+e.target.value;cur.mv={};cur.amt=0;addV()}
   else if(e.target.id==='receipt-file'){const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{scanReceipt(f.type||'image/jpeg',rd.result.split(',')[1]);e.target.value=''};rd.readAsDataURL(f)}
+  else if(e.target.id==='bk-file'){const f=e.target.files[0];if(f)onBackupFile(f);e.target.value=''}
 });
 document.addEventListener('toggle',e=>{if(e.target.tagName==='DETAILS'){const id=+e.target.dataset.id;e.target.open?open.add(id):open.delete(id)}},true);
 $('#mo').addEventListener('change',e=>{month=e.target.value||month;if(tab!=='add'&&tab!=='w')render()});
+runRecurring();
+if(locked){const ls=$('#lockscreen');if(ls)ls.hidden=false}
 render();
 </script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}))}</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* Đồng bộ Supabase, offline-first: localStorage là nguồn dữ liệu chính, cloud là bản sao. */
