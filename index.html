@@ -93,7 +93,7 @@ body::before{content:'';position:fixed;top:-120px;left:50%;transform:translateX(
 </style>
 </head>
 <body>
-/*<div id="lockscreen" class="lockscreen" hidden><div class="lock-card"><div style="font-size:40px;margin-bottom:8px">🔒</div><h3 style="margin-bottom:4px">Nhập mã PIN</h3><p class="mute" id="lock-msg" style="margin-bottom:14px">Mở khóa để xem Sổ chi tiêu</p><input id="lock-in" type="password" inputmode="numeric" maxlength="6" style="text-align:center;font-size:22px;letter-spacing:8px"><button class="pri" id="lock-go" style="margin-top:12px">Mở khóa</button><button class="del" id="lock-forgot" style="margin-top:10px">Quên mã PIN?</button></div></div>*/
+<div id="lockscreen" class="lockscreen" hidden><div class="lock-card"><div style="font-size:40px;margin-bottom:8px">🔒</div><h3 style="margin-bottom:4px">Nhập mã PIN</h3><p class="mute" id="lock-msg" style="margin-bottom:14px">Mở khóa để xem Sổ chi tiêu</p><input id="lock-in" type="password" inputmode="numeric" maxlength="6" style="text-align:center;font-size:22px;letter-spacing:8px"><button class="pri" id="lock-go" style="margin-top:12px">Mở khóa</button><button class="del" id="lock-forgot" style="margin-top:10px">Quên mã PIN?</button></div></div>
 <div class="w">
 <header>
   <div><h1>Tổng số dư các ví</h1><div style="display:flex;align-items:center;gap:6px"><div id="total"></div><button id="eye" class="eye"></button></div></div>
@@ -712,7 +712,7 @@ document.addEventListener('change',e=>{
 document.addEventListener('toggle',e=>{if(e.target.tagName==='DETAILS'){const id=+e.target.dataset.id;e.target.open?open.add(id):open.delete(id)}},true);
 $('#mo').addEventListener('change',e=>{month=e.target.value||month;if(tab!=='add'&&tab!=='w')render()});
 runRecurring();
-if(locked){const ls=$('#lockscreen');if(ls)ls.hidden=false}
+//if(locked){const ls=$('#lockscreen');if(ls)ls.hidden=false}
 render();
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}))}</script>
