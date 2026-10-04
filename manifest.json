@@ -1,0 +1,16 @@
+{
+  "name": "Sổ chi tiêu theo tờ tiền",
+  "short_name": "Sổ chi tiêu",
+  "description": "Quản lý chi tiêu theo từng tờ tiền, nhiều ví, ngân sách và trợ lý AI",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#eaf0ee",
+  "theme_color": "#0b6e5a",
+  "orientation": "portrait",
+  "lang": "vi",
+  "icons": [
+    {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"},
+    {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable"}
+  ]
+}
