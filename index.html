@@ -93,7 +93,7 @@ body::before{content:'';position:fixed;top:-120px;left:50%;transform:translateX(
 </style>
 </head>
 <body>
-<div id="lockscreen" class="lockscreen" hidden><div class="lock-card"><div style="font-size:40px;margin-bottom:8px">🔒</div><h3 style="margin-bottom:4px">Nhập mã PIN</h3><p class="mute" id="lock-msg" style="margin-bottom:14px">Mở khóa để xem Sổ chi tiêu</p><input id="lock-in" type="password" inputmode="numeric" maxlength="6" style="text-align:center;font-size:22px;letter-spacing:8px"><button class="pri" id="lock-go" style="margin-top:12px">Mở khóa</button></div></div>
+<div id="lockscreen" class="lockscreen" hidden><div class="lock-card"><div style="font-size:40px;margin-bottom:8px">🔒</div><h3 style="margin-bottom:4px">Nhập mã PIN</h3><p class="mute" id="lock-msg" style="margin-bottom:14px">Mở khóa để xem Sổ chi tiêu</p><input id="lock-in" type="password" inputmode="numeric" maxlength="6" style="text-align:center;font-size:22px;letter-spacing:8px"><button class="pri" id="lock-go" style="margin-top:12px">Mở khóa</button><button class="del" id="lock-forgot" style="margin-top:10px">Quên mã PIN?</button></div></div>
 <div class="w">
 <header>
   <div><h1>Tổng số dư các ví</h1><div style="display:flex;align-items:center;gap:6px"><div id="total"></div><button id="eye" class="eye"></button></div></div>
@@ -269,7 +269,7 @@ function wal(){
   <input type="file" accept="application/json" id="bk-file" style="display:none">
   ${pendingImport?`<div class="al warn" style="margin-top:10px"><span>⚠️</span><span>File có ${pendingImport.wallets.length} ví, ${pendingImport.tx.length} giao dịch. Nhập sẽ <b>thay thế toàn bộ</b> dữ liệu hiện tại trên máy này.</span></div><button class="pri" data-bk="confirm">Xác nhận nhập</button><button class="del" data-bk="cancel">Hủy</button>`:''}</div>`+
   `<div class="card"><h3>🔒 Khóa app bằng mã PIN</h3><p class="mute" style="margin-bottom:8px">Chỉ lưu trên máy này, yêu cầu nhập lại mỗi khi mở app. Không chặn được người rành kỹ thuật mở devtools, chỉ chống xem lướt qua.</p>
-  ${pinHash?`<label>Nhập mã PIN hiện tại để tắt khóa<input id="pin-cur" type="password" inputmode="numeric" maxlength="6"></label><button class="pri" data-pin="off">Tắt khóa PIN</button>`:`<label>Đặt mã PIN (4-6 số)<input id="pin-new" type="password" inputmode="numeric" maxlength="6"></label><label>Nhập lại mã PIN<input id="pin-confirm" type="password" inputmode="numeric" maxlength="6"></label><button class="pri" data-pin="on">Đặt mã PIN</button>`}</div>`;
+  ${pinHash?`<label>Nhập mã PIN hiện tại để tắt khóa<input id="pin-cur" type="password" inputmode="numeric" maxlength="6"></label><button class="pri" data-pin="off">Tắt khóa PIN</button>`:pinConfirming?`<div class="al warn"><span>⚠️</span><span>Lần mở app sau bạn sẽ cần nhập đúng mã PIN vừa nhập. Bấm "Xác nhận đặt mã PIN" lần nữa để áp dụng.</span></div><button class="pri" data-pin="on">Xác nhận đặt mã PIN</button><button class="del" data-pin="cancel">Hủy</button>`:`<label>Đặt mã PIN (4-6 số)<input id="pin-new" type="password" inputmode="numeric" maxlength="6"></label><label>Nhập lại mã PIN<input id="pin-confirm" type="password" inputmode="numeric" maxlength="6"></label><button class="pri" data-pin="on">Đặt mã PIN</button>`}</div>`;
 }
 function splitNotes(amount){const out={};let rem=Math.max(0,Math.round(amount));for(const d of R){const take=Math.floor(rem/d);if(take>0){out[d]=take;rem-=take*d}}return{notes:out,rem}}
 function greedyNotes(amount,w){const out={};let rem=Math.max(0,Math.round(amount));for(const d of R){const have=w.notes[d]||0,take=Math.min(have,Math.floor(rem/d));if(take>0){out[d]=take;rem-=take*d}}return{notes:out,rem}}
@@ -404,6 +404,7 @@ document.addEventListener('input',e=>{if(e.target.id==='amt'){cur.amt=+e.target.
 let AI={provider:'gemini',gKey:'',gModel:'gemini-3-flash-preview',kKey:'',kModel:'kira-mini-1.0',msgs:[],insight:'',busyC:false,busyI:false,qkBusy:false,plan:{},planBusy:{}};
 let pinHash='';try{pinHash=localStorage.getItem('sct_pin')||''}catch(e){}
 let locked=!!pinHash;
+let pinConfirming=false,pinDraft='',forgetConfirm=false;
 try{
   const c=JSON.parse(localStorage.getItem('sct_ai'))||{};
   AI.provider=c.provider||(c.key?'gemini':AI.provider);
@@ -572,6 +573,12 @@ function confirmImport(){
 }
 function cancelImport(){pendingImport=null;wal()}
 async function sha(s){const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('')}
+function forgotPin(){
+  if(!forgetConfirm){forgetConfirm=true;const m=$('#lock-msg');if(m)m.textContent='Mã PIN sẽ bị xóa, dữ liệu chi tiêu không mất. Bấm "Quên mã PIN?" lần nữa để xác nhận.';return}
+  pinHash='';try{localStorage.removeItem('sct_pin')}catch(e){}
+  locked=false;forgetConfirm=false;const ls=$('#lockscreen');if(ls)ls.hidden=true;
+  toast('Đã xóa mã PIN, bạn có thể đặt lại ở tab Ví nếu muốn');
+}
 async function tryUnlock(){
   const el=$('#lock-in'),v=el&&el.value.trim();if(!v)return;
   const h2=await sha(v);
@@ -579,12 +586,16 @@ async function tryUnlock(){
   else{const card=document.querySelector('.lock-card');if(card){card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake')}const m=$('#lock-msg');if(m)m.textContent='Sai mã PIN, thử lại nhé';if(el)el.value=''}
 }
 async function setPin(){
+  if(pinConfirming){
+    pinHash=await sha(pinDraft);try{localStorage.setItem('sct_pin',pinHash)}catch(e){}
+    pinConfirming=false;pinDraft='';wal();toast('Đã đặt mã PIN khóa app — lần mở sau cần nhập mã này');return;
+  }
   const p1=($('#pin-new')||{}).value?.trim()||'',p2=($('#pin-confirm')||{}).value?.trim()||'';
   if(!/^\d{4,6}$/.test(p1)){toast('Mã PIN phải gồm 4-6 chữ số');return}
   if(p1!==p2){toast('Hai mã PIN chưa khớp');return}
-  pinHash=await sha(p1);try{localStorage.setItem('sct_pin',pinHash)}catch(e){}
-  wal();toast('Đã đặt mã PIN khóa app');
+  pinDraft=p1;pinConfirming=true;wal();
 }
+function cancelPin(){pinConfirming=false;pinDraft='';wal()}
 async function removePin(){
   const p=($('#pin-cur')||{}).value?.trim()||'',h2=await sha(p);
   if(h2!==pinHash){toast('Mã PIN hiện tại không đúng');return}
@@ -688,6 +699,8 @@ document.addEventListener('click',e=>{
   else if(q.pin==='on')setPin();
   else if(q.pin==='off')removePin();
   else if(b.id==='lock-go')tryUnlock();
+  else if(b.id==='lock-forgot')forgotPin();
+  else if(q.pin==='cancel')cancelPin();
   else if(b.id==='ok')submit();
 });
 document.addEventListener('change',e=>{
